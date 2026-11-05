@@ -1,0 +1,6 @@
+/* App shell — everything else lives in index.css and Tailwind utilities. */
+.App {
+  min-height: 100vh;
+  background: var(--ritual-bg);
+  color: var(--ritual-text);
+}
