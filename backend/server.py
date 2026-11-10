@@ -2452,6 +2452,12 @@ async def delete_my_review(venue_id: str, user: dict = Depends(get_current_user)
 # ---------------------------------------------------------------------------
 # Include router + CORS
 # ---------------------------------------------------------------------------
+@api.get("/")
+async def root():
+    # Health check target (render.yaml healthCheckPath). Must be registered before include_router.
+    return {"service": "table", "status": "ok"}
+
+
 app.include_router(api)
 _UPLOAD_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
 
@@ -2915,7 +2921,3 @@ async def on_startup():
 async def on_shutdown():
     client.close()
 
-
-@api.get("/")
-async def root():
-    return {"service": "table", "status": "ok"}
