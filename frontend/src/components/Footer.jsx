@@ -21,7 +21,7 @@ const COLUMNS = [
   },
   {
     title: "Restaurants",
-    links: [{ to: "/restaurant-login", label: "List your restaurant" }],
+    links: [{ to: "/restaurant-login", label: "Restaurant sign in" }],
   },
   {
     title: "Legal",

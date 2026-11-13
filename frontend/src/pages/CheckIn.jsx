@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { Link, useParams, useNavigate } from "react-router-dom";
+import { Link, useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { QrCode, Check } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, formatApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { AnimatedNumber } from "@/components/AnimatedNumber";
 
@@ -10,6 +10,8 @@ export default function CheckIn() {
   const { id } = useParams();
   const { refresh } = useAuth();
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const [token, setToken] = useState(params.get("t")); // rotating code from the restaurant's live QR
   const [venue, setVenue] = useState(null);
   const [step, setStep] = useState("scan"); // scan → confirmed → feedback → done
   const [result, setResult] = useState(null);
@@ -24,14 +26,15 @@ export default function CheckIn() {
   const doCheckIn = async () => {
     setBusy(true);
     try {
-      const { data } = await api.post(`/venues/${id}/checkin`, {});
+      const { data } = await api.post(`/venues/${id}/checkin`, { token });
       setResult(data);
       await refresh();
       setStep("confirmed");
       // After a beat, move to feedback
       setTimeout(() => setStep("feedback"), 1400);
     } catch (e) {
-      toast.error("A quiet error. Please try again.");
+      if (e.response?.status === 400) setToken(null); // code expired: ask for a fresh scan
+      toast.error(formatApiError(e.response?.data?.detail) || "A quiet error. Please try again.");
     } finally {
       setBusy(false);
     }
@@ -73,17 +76,30 @@ export default function CheckIn() {
               <QrCode strokeWidth={0.8} className="h-24 w-24 text-[#CE6A4A]" />
               <div className="absolute inset-x-0 h-px bg-[#CE6A4A]/60 animate-fade-up" />
             </div>
-            <p className="mt-8 font-serif text-xl text-[#F2EDE7]/80 italic max-w-md mx-auto">
-              A quiet gesture. Confirm your arrival to begin.
-            </p>
-            <button
-              onClick={doCheckIn}
-              disabled={busy}
-              data-testid="confirm-checkin-button"
-              className="btn-primary mt-10"
-            >
-              {busy ? "One moment" : "Confirm arrival"}
-            </button>
+            {token ? (
+              <>
+                <p className="mt-8 font-serif text-xl text-[#F2EDE7]/80 italic max-w-md mx-auto">
+                  A quiet gesture. Confirm your arrival to begin.
+                </p>
+                <button
+                  onClick={doCheckIn}
+                  disabled={busy}
+                  data-testid="confirm-checkin-button"
+                  className="btn-primary mt-10"
+                >
+                  {busy ? "One moment" : "Confirm arrival"}
+                </button>
+              </>
+            ) : (
+              <div data-testid="checkin-needs-scan">
+                <p className="mt-8 font-serif text-xl text-[#F2EDE7]/80 italic max-w-md mx-auto">
+                  Check-in happens at the restaurant. Scan the live QR code at the host stand to begin.
+                </p>
+                <Link to="/scan" className="btn-primary mt-10 inline-block" data-testid="checkin-open-scanner">
+                  Open scanner
+                </Link>
+              </div>
+            )}
           </div>
         )}
 

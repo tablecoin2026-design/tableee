@@ -530,6 +530,56 @@ function PublishCard({ venue, onSaved }) {
   );
 }
 
+// Live check-in QR: embeds a short-lived signed code that the backend refreshes every minute.
+function LiveCheckinQr({ venue }) {
+  const [token, setToken] = useState(null);
+  const [left, setLeft] = useState(0);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let stopped = false;
+    let timer;
+    const load = async () => {
+      try {
+        const { data } = await api.get(`/staff/venues/${venue.id}/checkin-token`);
+        if (stopped) return;
+        setToken(data.token);
+        setLeft(data.expires_in);
+        setFailed(false);
+        timer = setTimeout(load, data.expires_in * 1000 + 400);
+      } catch {
+        if (stopped) return;
+        setFailed(true);
+        timer = setTimeout(load, 5000);
+      }
+    };
+    load();
+    const tick = setInterval(() => setLeft((s) => Math.max(0, s - 1)), 1000);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+      clearInterval(tick);
+    };
+  }, [venue.id]);
+
+  if (!token) {
+    return (
+      <div className="grid h-[328px] w-[328px] place-items-center rounded-2xl border border-[color:var(--st-border)] text-sm text-[color:var(--st-muted)]">
+        {failed ? "Could not load the live code. Retrying…" : "Loading live code…"}
+      </div>
+    );
+  }
+  const url = `${window.location.origin}/checkin/${venue.qr_slug || venue.id}?t=${token}`;
+  return (
+    <div className="flex flex-col items-center" data-testid="live-checkin-qr">
+      <QRDisplay value={url} size={280} label={venue.name} />
+      <div className="mt-3 text-xs text-[color:var(--st-muted)] tabular-nums" role="status">
+        {failed ? "Connection lost, retrying…" : `Live code · refreshes in ${left}s`}
+      </div>
+    </div>
+  );
+}
+
 function VenueProfileForm({ venue, onSaved }) {
   const [form, setForm] = useState({
     name: venue.name || "",
@@ -545,11 +595,35 @@ function VenueProfileForm({ venue, onSaved }) {
     regulars_order: venue.regulars_order || [],
   });
   const [busy, setBusy] = useState(false);
+  const [coverBusy, setCoverBusy] = useState(false);
+  const coverRef = useRef(null);
 
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
 
+  const pickCover = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setCoverBusy(true);
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      const { data } = await api.post(`/staff/venues/${venue.id}/event-image`, body);
+      setForm((f) => ({ ...f, image_url: data.url }));
+      toast.success("Cover photo uploaded. Save the profile to publish it.");
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail) || "Could not upload that photo.");
+    } finally {
+      setCoverBusy(false);
+    }
+  };
+
   const submit = async (e) => {
     e.preventDefault();
+    if (!form.image_url) {
+      toast.error("Upload a cover photo first.");
+      return;
+    }
     setBusy(true);
     try {
       await api.patch(`/staff/venues/${venue.id}/profile`, {
@@ -666,23 +740,40 @@ function VenueProfileForm({ venue, onSaved }) {
           </div>
         </div>
 
-        <div>
-          <label className={label}>Photo URL</label>
-          <input
-            type="text"
-            required
-            value={form.image_url}
-            onChange={set("image_url")}
-            data-testid="profile-image-input"
-            className={cn(box, "pl-5")}
-          />
-          {form.image_url && (
-            <img
-              src={assetUrl(form.image_url)}
-              alt=""
-              className="mt-3 h-32 w-full max-w-sm rounded-xl object-cover border border-[color:var(--st-border)]"
-            />
-          )}
+        <div data-testid="profile-cover-field">
+          <label className={label}>Cover photo</label>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+            <div className="grid aspect-video w-full max-w-xs shrink-0 place-items-center overflow-hidden rounded-xl border border-[color:var(--st-border)] bg-[color:var(--st-card)]">
+              {form.image_url ? (
+                <img src={assetUrl(form.image_url)} alt="Cover preview" className="h-full w-full object-contain" />
+              ) : (
+                <span className="text-xs text-[color:var(--st-faint)]">No cover photo yet</span>
+              )}
+            </div>
+            <div>
+              <input
+                ref={coverRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                onChange={pickCover}
+                className="hidden"
+                data-testid="profile-cover-input"
+              />
+              <button
+                type="button"
+                disabled={coverBusy}
+                onClick={() => coverRef.current?.click()}
+                data-testid="profile-cover-upload"
+                className="inline-flex items-center gap-2 rounded-xl border border-[color:var(--st-gold)] px-6 py-3 text-xs font-semibold tracking-[0.18em] uppercase text-[color:var(--st-text)] transition hover:bg-[rgb(var(--st-gold-rgb)/0.1)] disabled:opacity-50"
+              >
+                <Upload strokeWidth={1.75} className="h-4 w-4" />
+                {coverBusy ? "Uploading" : form.image_url ? "Change cover photo" : "Upload cover photo"}
+              </button>
+              <p className="mt-2 max-w-xs text-xs text-[color:var(--st-faint)]">
+                The first photo guests see. Upload from your device (JPG, PNG, WebP or GIF, up to 8 MB). Add more photos in the Photos section below.
+              </p>
+            </div>
+          </div>
         </div>
 
         <TagListInput
@@ -726,17 +817,28 @@ function VenuePhotosPanel({ venue, onSaved }) {
   const [caption, setCaption] = useState("");
   const [busy, setBusy] = useState(false);
   const [filter, setFilter] = useState("all");
+  const [progress, setProgress] = useState("");
+  const [dragging, setDragging] = useState(false);
   const fileRef = useRef(null);
   const photos = venue.photos || [];
   const shown = filter === "all" ? photos : photos.filter((p) => p.category === filter);
 
-  const upload = async (e) => {
+  const upload = (e) => {
     const files = Array.from(e.target.files || []);
     e.target.value = "";
+    return uploadFiles(files);
+  };
+
+  const uploadFiles = async (all) => {
+    const files = all.filter((f) => f.type.startsWith("image/"));
+    if (all.length && !files.length) toast.error("Only image files can be uploaded.");
     if (!files.length) return;
     setBusy(true);
     let ok = 0;
+    let n = 0;
     for (const file of files) {
+      n += 1;
+      setProgress(`${n} of ${files.length}`);
       const body = new FormData();
       body.append("file", file);
       body.append("category", category);
@@ -749,6 +851,7 @@ function VenuePhotosPanel({ venue, onSaved }) {
       }
     }
     setBusy(false);
+    setProgress("");
     if (ok) {
       toast.success(ok === 1 ? "Photo uploaded." : `${ok} photos uploaded.`);
       setCaption("");
@@ -778,7 +881,8 @@ function VenuePhotosPanel({ venue, onSaved }) {
     <div className="mt-14 max-w-3xl" data-testid="venue-photos-panel">
       <h3 className="font-serif text-2xl text-[color:var(--st-text)]">Photos</h3>
       <p className="mt-1 text-sm text-[color:var(--st-muted)]">
-        Upload pictures of your dishes, recipes and the restaurant. JPG, PNG, WebP or GIF, up to 8 MB each.
+        Upload as many photos as you like, several at a time. Food, Recipe and Restaurant photos play as the slideshow at the top of your
+        page; Menu photos appear in the Menu section. JPG, PNG, WebP or GIF, up to 8 MB each.
       </p>
 
       <div className="mt-5 flex flex-wrap items-center gap-2">
@@ -822,8 +926,31 @@ function VenuePhotosPanel({ venue, onSaved }) {
           className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#CE6A4A] to-[#B5573A] px-8 py-3.5 text-xs font-semibold tracking-[0.18em] uppercase text-[#0B0A0A] hover:brightness-110 disabled:opacity-50 transition"
         >
           <Upload strokeWidth={1.75} className="h-4 w-4" />
-          {busy ? "Uploading" : "Upload photo"}
+          {busy ? `Uploading ${progress}` : "Upload photos"}
         </button>
+      </div>
+
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          if (!busy) uploadFiles(Array.from(e.dataTransfer.files || []));
+        }}
+        onClick={() => !busy && fileRef.current?.click()}
+        data-testid="photo-dropzone"
+        className={cn(
+          "mt-4 cursor-pointer rounded-xl border border-dashed px-6 py-8 text-center text-sm transition-colors",
+          dragging
+            ? "border-[color:var(--st-gold)] bg-[rgb(var(--st-gold-rgb)/0.08)] text-[color:var(--st-text)]"
+            : "border-[color:var(--st-border)] text-[color:var(--st-muted)] hover:border-[color:var(--st-gold)]",
+        )}
+      >
+        {busy ? `Uploading ${progress}…` : "Drag and drop photos here, or click to choose several at once"}
       </div>
 
       {photos.length > 0 && (
@@ -1832,8 +1959,6 @@ export default function StaffDashboard() {
     return <div className="mx-auto max-w-4xl px-5 py-16 overline text-center">Loading dashboard…</div>;
   }
 
-  const checkinUrl = `${window.location.origin}/checkin/${selectedVenue.qr_slug || selectedVenue.id}`;
-
   return (
     <div data-testid="staff-dashboard" className="staff-scope">
       <div className="hidden sm:flex flex-col fixed left-0 top-0 h-screen w-[17rem] border-r border-[color:var(--st-border)] bg-[color:var(--st-side)] z-30 overflow-y-auto">
@@ -2213,12 +2338,13 @@ export default function StaffDashboard() {
             <div>
               <div className="overline mb-4">Present at the host stand</div>
               <h2 className="font-serif-display text-3xl leading-tight">
-                A single QR — every arriving member.
+                One live QR — every arriving member.
               </h2>
               <p className="text-[color:var(--st-muted)] font-light mt-4 leading-relaxed">
-                Display this at the entrance or on the reservation stand. When a
-                member scans it in the Table app, they are checked into {selectedVenue.name} and awarded 100
-                Table Points.
+                Keep this screen open at the entrance or reservation stand. When a member scans it in the Table app,
+                they are checked into {selectedVenue.name} and awarded 100 Table Points. The code changes every minute,
+                so a photo or screenshot of it stops working, and each member can check in once per day. Don&apos;t print
+                it: show it on a tablet or screen.
               </p>
               <QrSlugEditor
                 key={selectedVenue.id}
@@ -2230,7 +2356,7 @@ export default function StaffDashboard() {
               />
             </div>
             <div className="flex justify-center lg:justify-end">
-              <QRDisplay value={checkinUrl} size={280} label={selectedVenue.name} />
+              <LiveCheckinQr key={selectedVenue.id} venue={selectedVenue} />
             </div>
           </div>
         </div>

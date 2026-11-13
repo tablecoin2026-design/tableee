@@ -133,8 +133,11 @@ class TestCheckInAndRedeem:
         w0 = s.get(f"{API}/wallet", timeout=10).json()
         balance0 = w0["balance"]
 
-        # Check in at Verre
-        r = s.post(f"{API}/venues/venue-verre/checkin", json={}, timeout=10)
+        # Check in at Verre with the live QR code (admins can read any venue's code)
+        tok = s.get(f"{API}/staff/venues/venue-verre/checkin-token", timeout=10).json()["token"]
+        r = s.post(f"{API}/venues/venue-verre/checkin", json={"token": tok}, timeout=10)
+        if r.status_code == 409:
+            pytest.skip("already checked in at Verre today (one check-in per venue per day)")
         assert r.status_code == 200, r.text
         data = r.json()
         assert data["points_earned"] == 100

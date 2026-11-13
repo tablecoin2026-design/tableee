@@ -81,11 +81,6 @@ function SearchBar({ query, setQuery, cuisine, setCuisine, cuisines, hood, setHo
             <X className="h-4 w-4" />
           </button>
         )}
-        <span className="hidden sm:block h-8 w-px bg-white/15" />
-        <span className="hidden sm:flex items-center gap-2 whitespace-nowrap text-[13px] text-[#D8CBB9]">
-          <MapPin strokeWidth={1.6} className="h-4 w-4 text-[#CE6A4A]" /> Current location
-          <ChevronDown className="ml-2 h-4 w-4" />
-        </span>
       </div>
       <div className="flex flex-wrap items-center gap-3">
         <SelectPill icon={UtensilsCrossed} value={cuisine} onChange={(e) => setCuisine(e.target.value)} aria-label="Cuisine" data-testid="filter-cuisine">

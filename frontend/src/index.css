@@ -384,3 +384,117 @@ html.staff-light .overline { color: var(--st-muted); }
 html.staff-light .overline-accent { color: var(--st-gold); }
 html.staff-light .btn-ghost { color: var(--st-text); border-color: var(--st-border); }
 html.staff-light .btn-ghost:hover { background: var(--st-inner); }
+
+/* ---------- Menu book (components/MenuBook.jsx) ---------- */
+.mb-root {
+  --mb-w: min(380px, 76vw);
+  --mb-x: -66%;      /* open page sits left of centre so the fan fits on its right */
+  --mb-first: 102%;  /* gap between the open page and the first page behind it */
+  --mb-step: 19%;    /* how far each further page peeks out */
+}
+.mb-serif {
+  font-family: "Cormorant Garamond", Georgia, "Times New Roman", serif;
+  letter-spacing: 0;
+}
+.mb-stage {
+  position: relative;
+  height: clamp(520px, 58vw, 680px);
+  perspective: 2000px;
+  perspective-origin: 50% 35%;
+  overflow-x: clip;
+  outline: none;
+  background: radial-gradient(ellipse 60% 40% at 50% 92%, rgba(190, 130, 60, 0.18), transparent 70%);
+}
+.mb-stage:focus-visible { box-shadow: 0 0 0 2px #ce6a4a; border-radius: 12px; }
+.mb-glow {
+  position: absolute;
+  left: 50%;
+  bottom: 6px;
+  width: min(86%, 980px);
+  height: 92px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  border: 2px solid rgba(238, 205, 140, 0.9);
+  box-shadow: 0 0 34px 4px rgba(214, 170, 90, 0.45), inset 0 0 34px rgba(214, 170, 90, 0.3);
+  pointer-events: none;
+}
+.mb-leaf {
+  position: absolute;
+  top: 0;
+  bottom: 56px;
+  left: 50%;
+  width: var(--mb-w);
+  margin-left: calc(var(--mb-w) / -2);
+  transform-style: preserve-3d;
+  transform:
+    translateX(calc(var(--mb-x) + min(var(--d), 1) * var(--mb-first) + max(var(--d) - 1, 0) * var(--mb-step)))
+    translateZ(calc(var(--d) * -70px))
+    rotateY(calc(-9deg - min(var(--d), 1) * 7deg))
+    scale(calc(1 - var(--d) * 0.06));
+  /* Stay opaque so pages don't show through each other; dim with brightness instead. */
+  filter: brightness(calc(1 - var(--d) * 0.09));
+  transition: transform 0.75s cubic-bezier(0.22, 0.8, 0.25, 1), opacity 0.6s ease, filter 0.6s ease;
+  cursor: pointer;
+}
+.mb-leaf[data-active="true"] { cursor: default; }
+.mb-leaf.mb-gone {
+  transform: translateX(calc(var(--mb-x) - 115%)) rotateY(24deg);
+  opacity: 0;
+  pointer-events: none;
+}
+.mb-leaf.mb-far { opacity: 0; pointer-events: none; }
+.mb-face {
+  position: absolute;
+  inset: 0;
+  border-radius: 4px 12px 12px 4px;
+  box-shadow: 0 34px 50px -22px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+}
+.mb-cover {
+  background:
+    radial-gradient(120% 80% at 30% 0%, rgba(255, 255, 255, 0.07), transparent 55%),
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.012) 0 2px, transparent 2px 4px),
+    linear-gradient(150deg, #231d19 0%, #0d0a09 100%);
+}
+.mb-cover::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 14px;
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.55), rgba(255, 255, 255, 0.07) 60%, transparent);
+}
+.mb-page {
+  background:
+    radial-gradient(120% 70% at 20% 0%, rgba(255, 255, 255, 0.55), transparent 60%),
+    linear-gradient(135deg, #f8f1e3 0%, #ebdec5 100%);
+}
+.mb-frame { position: absolute; border-radius: 3px; pointer-events: none; }
+.mb-frame-1 { inset: 14px; border: 1px solid rgba(201, 165, 92, 0.8); }
+.mb-frame-2 { inset: 20px; border: 1px solid rgba(201, 165, 92, 0.35); }
+.mb-frame-page { inset: 12px; border: 1px solid rgba(184, 145, 63, 0.55); }
+.mb-gold {
+  background-image: linear-gradient(180deg, #f0d89c 0%, #c79b4a 55%, #a9792f 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.mb-scroll { scrollbar-width: thin; scrollbar-color: rgba(184, 145, 63, 0.5) transparent; outline: none; }
+.mb-scroll::-webkit-scrollbar { width: 6px; }
+.mb-scroll::-webkit-scrollbar-thumb { background: rgba(184, 145, 63, 0.5); border-radius: 3px; }
+
+/* Phones: one page at a time, no fan. */
+@media (max-width: 767px) {
+  .mb-root { --mb-x: 0%; --mb-first: 0%; --mb-step: 0%; }
+  .mb-stage { height: 560px; }
+  .mb-glow { width: 96%; height: 70px; }
+  .mb-leaf { opacity: calc(1 - min(var(--d), 1)); filter: none; transform: translateX(var(--mb-x)) rotateY(0deg); }
+  .mb-leaf.mb-gone { transform: translateX(-115%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mb-leaf { transition: none; }
+}
+
+.font-cormorant {
+  font-family: "Cormorant Garamond", Georgia, "Times New Roman", serif;
+  letter-spacing: 0;
+}

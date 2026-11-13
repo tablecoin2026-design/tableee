@@ -39,7 +39,7 @@ const PAGES = {
       { h: "How do I book a table?", p: ["Open a restaurant, choose Reserve a table, pick a night, a time and your party size. You'll need to be signed in to confirm. Your reservations, with add-to-calendar, are under Bookings."] },
       { h: "Can I cancel a reservation?", p: ["Yes. Open Bookings and choose Release the table. Cancel at least 24 hours before and your deposit is refunded in full. If a restaurant declines your booking, you are always refunded."] },
       { h: "Who can leave a review?", p: ["Members who have checked in at, or been seated by, a restaurant. You can edit or delete your review any time."] },
-      { h: "I run a restaurant. How do I join?", p: ["Use List your restaurant to create your venue and staff login. You can then set your profile, photos, loyalty rewards and booking deposit."] },
+      { h: "I run a restaurant. How do I join?", p: ["Table works with a hand-picked set of partner restaurants, so there is no public sign-up. Partners receive a private access code from the Table team and use Restaurant sign in to manage their profile, photos, loyalty rewards and booking deposit."] },
     ],
   },
   terms: {

@@ -31,6 +31,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from fastapi.middleware.cors import CORSMiddleware
 from cryptography.fernet import Fernet, InvalidToken
 from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo.errors import DuplicateKeyError
 from pydantic import BaseModel, Field, ConfigDict, EmailStr, field_validator
 
 
@@ -410,6 +411,7 @@ class LoginIn(BaseModel):
 class CheckInIn(BaseModel):
     item_ordered: Optional[str] = None
     would_return: Optional[bool] = None
+    token: Optional[str] = None  # rotating code from the restaurant's live QR (proves the member is there)
 
 
 class RedeemIn(BaseModel):
@@ -461,15 +463,6 @@ class VenueProfileIn(BaseModel):
 
 class PublishIn(BaseModel):
     published: bool
-
-
-class RestaurantRegisterIn(BaseModel):
-    owner_name: str = Field(min_length=1, max_length=80)
-    email: EmailStr
-    password: str = Field(min_length=6)
-    restaurant_name: str = Field(min_length=1, max_length=80)
-    cuisine: Optional[str] = Field(default=None, max_length=60)
-    neighborhood: str = Field(min_length=1, max_length=60)
 
 
 class AdminVenueIn(BaseModel):
@@ -590,6 +583,31 @@ def _iso(dt: datetime) -> str:
 
 def _now_iso() -> str:
     return _iso(datetime.now(timezone.utc))
+
+
+# Check-in proof of presence: the staff dashboard shows a QR that embeds a short-lived signed code.
+# Codes are stateless (HMAC of venue id + time window), so every server instance can verify them.
+CHECKIN_QR_PERIOD = 60  # seconds per code window; the previous window is also accepted (scan delay)
+
+
+def _checkin_sig(venue_id: str, window: int) -> str:
+    key = f"{JWT_SECRET}:checkin".encode("utf-8")
+    return hmac.new(key, f"{venue_id}:{window}".encode("utf-8"), hashlib.sha256).hexdigest()[:20]
+
+
+def make_checkin_token(venue_id: str) -> str:
+    window = int(datetime.now(timezone.utc).timestamp() // CHECKIN_QR_PERIOD)
+    return f"{window}.{_checkin_sig(venue_id, window)}"
+
+
+def verify_checkin_token(venue_id: str, token: Optional[str]) -> bool:
+    try:
+        window_s, sig = (token or "").split(".", 1)
+        window = int(window_s)
+    except ValueError:
+        return False
+    current = int(datetime.now(timezone.utc).timestamp() // CHECKIN_QR_PERIOD)
+    return window in (current, current - 1) and hmac.compare_digest(sig, _checkin_sig(venue_id, window))
 
 
 def public_user(u: dict) -> dict:
@@ -764,31 +782,6 @@ def _draft_venue(name: str, cuisine: Optional[str], neighborhood: str, source: s
         "loyalty_points_per_booking": 30,
         "loyalty_rewards": [],
     }
-
-
-@api.post("/auth/register-restaurant")
-async def register_restaurant(payload: RestaurantRegisterIn, response: Response):
-    """Create a restaurant (unpublished draft) plus its staff login in one step."""
-    email = payload.email.lower().strip()
-    if await db.users.find_one({"email": email}):
-        raise HTTPException(status_code=400, detail="An account with this email already exists")
-
-    venue = _draft_venue(payload.restaurant_name, payload.cuisine, payload.neighborhood, "registered")
-    venue_id = venue["id"]
-    now = venue["created_at"]
-    user = {
-        "id": str(uuid.uuid4()),
-        "email": email,
-        "password_hash": hash_password(payload.password),
-        "name": payload.owner_name.strip(),
-        "role": "staff",
-        "staff_venue_id": venue_id,
-        "created_at": now,
-    }
-    await db.venues.insert_one(venue)
-    await db.users.insert_one(user)
-    set_auth_cookies(response, create_access_token(user["id"], email), create_refresh_token(user["id"]))
-    return public_user(user)
 
 
 # ---------------------------------------------------------------------------
@@ -982,16 +975,28 @@ async def checkin(venue_id: str, payload: CheckInIn, user: dict = Depends(get_cu
         raise HTTPException(status_code=404, detail="Venue not found")
     venue_id = venue["id"]
 
+    if not verify_checkin_token(venue_id, payload.token):
+        raise HTTPException(
+            status_code=400,
+            detail="That QR code is out of date. Scan the live code at the restaurant's host stand.",
+        )
+
     now = _now_iso()
     checkin_id = str(uuid.uuid4())
-    await db.checkins.insert_one({
-        "id": checkin_id,
-        "member_id": user["id"],
-        "venue_id": venue_id,
-        "timestamp": now,
-        "item_ordered": payload.item_ordered,
-        "would_return": payload.would_return,
-    })
+    # One check-in per member per restaurant per day (India time); the unique index makes this race-proof.
+    day_key = f"{user['id']}:{venue_id}:{datetime.now(BOOKING_TZ).date().isoformat()}"
+    try:
+        await db.checkins.insert_one({
+            "id": checkin_id,
+            "member_id": user["id"],
+            "venue_id": venue_id,
+            "timestamp": now,
+            "day_key": day_key,
+            "item_ordered": payload.item_ordered,
+            "would_return": payload.would_return,
+        })
+    except DuplicateKeyError:
+        raise HTTPException(status_code=409, detail=f"You've already checked in at {venue['name']} today.")
 
     # Award points
     delta = POINTS_PER_CHECKIN
@@ -1293,6 +1298,20 @@ def _assert_staff_can_manage(user: dict, venue_id: str) -> None:
         return
     if user.get("staff_venue_id") != venue_id:
         raise HTTPException(status_code=403, detail="Not authorized for this venue")
+
+
+@api.get("/staff/venues/{venue_id}/checkin-token")
+async def staff_checkin_token(venue_id: str, user: dict = Depends(require_staff_or_admin)):
+    """Current rotating code for the venue's live check-in QR (staff dashboard re-fetches it every minute)."""
+    _assert_staff_can_manage(user, venue_id)
+    if not await db.venues.find_one({"id": venue_id}, {"_id": 1}):
+        raise HTTPException(status_code=404, detail="Venue not found")
+    now = datetime.now(timezone.utc).timestamp()
+    return {
+        "token": make_checkin_token(venue_id),
+        "period": CHECKIN_QR_PERIOD,
+        "expires_in": int(CHECKIN_QR_PERIOD - (now % CHECKIN_QR_PERIOD)),
+    }
 
 
 @api.patch("/staff/venues/{venue_id}/status")
@@ -2903,6 +2922,7 @@ async def seed_database():
     await db.reviews.create_index([("venue_id", 1), ("member_id", 1)], unique=True)
     await db.events.create_index("venue_id")
     await db.checkins.create_index([("member_id", 1), ("timestamp", -1)])
+    await db.checkins.create_index("day_key", unique=True, sparse=True)  # one check-in per member/venue/day
     await db.points_ledger.create_index([("member_id", 1), ("timestamp", -1)])
     await db.redemptions.create_index([("member_id", 1), ("timestamp", -1)])
     await db.venue_loyalty.create_index([("member_id", 1), ("venue_id", 1)], unique=True)

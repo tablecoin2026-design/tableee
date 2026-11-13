@@ -8,9 +8,9 @@ const TYPES = [
   { code: "request", label: "A quiet request" },
 ];
 
-export function ConciergeModal({ venue, onClose, onSent }) {
-  const [type, setType] = useState("preview_menu");
-  const [message, setMessage] = useState("");
+export function ConciergeModal({ venue, onClose, onSent, initialType = "preview_menu", initialMessage = "" }) {
+  const [type, setType] = useState(initialType);
+  const [message, setMessage] = useState(initialMessage);
   const [busy, setBusy] = useState(false);
 
   const submit = async (e) => {

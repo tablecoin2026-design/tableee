@@ -2,10 +2,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Check, Camera, Upload } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, formatApiError } from "@/lib/api";
 import { QRScanner, decodeQrFromFile } from "@/components/QRScanner";
 import { AnimatedNumber } from "@/components/AnimatedNumber";
 import { useAuth } from "@/lib/auth-context";
+
+// The live QR holds <site>/checkin/<venue>?t=<rotating code>; the code proves the member is at the restaurant.
+function parseToken(text) {
+  try {
+    return new URL(String(text).trim()).searchParams.get("t");
+  } catch {
+    return null;
+  }
+}
 
 function parseVenueId(text) {
   if (!text) return null;
@@ -32,7 +41,6 @@ export default function Scan() {
   const [scannerOn, setScannerOn] = useState(false);
   const [step, setStep] = useState("scan");
   const [result, setResult] = useState(null);
-  const [manualId, setManualId] = useState("");
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
@@ -81,22 +89,30 @@ export default function Scan() {
     return map;
   }, [venues]);
 
+  const inFlight = useRef(false); // the camera reports the same QR on every frame; check in once
   const doCheckin = useCallback(
-    async (venueId) => {
+    async (venueId, token) => {
+      if (inFlight.current) return;
       const venue = venueMap[venueId];
       if (!venue) {
         toast.error("That room is not in the network.");
         return;
       }
+      if (!token) {
+        toast.error("That QR code is out of date. Scan the live code shown at the host stand.");
+        return;
+      }
+      inFlight.current = true;
       setBusy(true);
       try {
-        const { data } = await api.post(`/venues/${venue.id}/checkin`, {});
+        const { data } = await api.post(`/venues/${venue.id}/checkin`, { token });
         setResult({ ...data, venue });
         await refresh();
         setStep("success");
       } catch (e) {
-        toast.error(e.response?.data?.detail || "Could not check in just now.");
+        toast.error(formatApiError(e.response?.data?.detail) || "Could not check in just now.");
       } finally {
+        inFlight.current = false;
         setBusy(false);
       }
     },
@@ -106,7 +122,7 @@ export default function Scan() {
   const handleScan = useCallback(
     (text) => {
       const id = parseVenueId(text);
-      if (id) doCheckin(id);
+      if (id) doCheckin(id, parseToken(text));
     },
     [doCheckin],
   );
@@ -114,11 +130,6 @@ export default function Scan() {
   const handleScanError = useCallback(() => {
     /* handled by QRScanner UI + manual fallback */
   }, []);
-
-  const submitManual = (e) => {
-    e.preventDefault();
-    if (manualId) doCheckin(manualId);
-  };
 
   const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
@@ -142,7 +153,7 @@ export default function Scan() {
         Scan the room&apos;s QR.
       </h1>
       <p className="text-[#8F8781] font-light mt-2 max-w-md">
-        Point your camera at the QR at the host stand. Your Table begins the moment it&apos;s read.
+        Point your camera at the live QR at the host stand. Your Table begins the moment it&apos;s read.
       </p>
 
       {step === "scan" && (
@@ -193,35 +204,10 @@ export default function Scan() {
             </div>
           )}
 
-          <div className="mt-10 hairline-t pt-8">
-            <div className="overline mb-3">Or check in manually</div>
-            <p className="text-sm text-[#8F8781] font-light mb-4">
-              A quiet fallback — pick the room you&apos;re in.
-            </p>
-            <form onSubmit={submitManual} className="flex flex-col sm:flex-row gap-3">
-              <select
-                value={manualId}
-                onChange={(e) => setManualId(e.target.value)}
-                data-testid="scan-manual-select"
-                className="flex-1 bg-[#1B1917] border border-[#262321] py-3 px-3 focus:border-[#CE6A4A] outline-none font-light text-[#F2EDE7]"
-              >
-                <option value="">Select a room…</option>
-                {venues.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.name} · {v.neighborhood}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="submit"
-                disabled={!manualId || busy}
-                data-testid="scan-manual-submit"
-                className="btn-primary"
-              >
-                Check in
-              </button>
-            </form>
-          </div>
+          {busy && <div className="overline mt-6 text-center" role="status">Checking you in…</div>}
+          <p className="mt-8 text-center text-sm text-[#8F8781] font-light">
+            Check-in happens at the restaurant: scan the live QR code at the host stand. It changes every minute.
+          </p>
         </div>
       )}
 

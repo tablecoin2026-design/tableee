@@ -37,18 +37,18 @@ function PasswordInput({ value, onChange, testId, autoComplete, minLength }) {
   );
 }
 
+// Where to go after sign-in: the page the member came from, query string included (check-in QR codes carry one).
+const returnTo = (from) => (from?.pathname ? `${from.pathname}${from.search || ""}` : "/discover");
+
 export default function Login({ staff = false }) {
-  const { user, login, loginWithCode, register, registerRestaurant, logout } = useAuth();
+  const { user, login, loginWithCode, register, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [mode, setMode] = useState(location.state?.mode === "create" ? "create" : "signin"); // "signin" | "create"
+  const [mode, setMode] = useState(!staff && location.state?.mode === "create" ? "create" : "signin"); // "signin" | "create" (restaurants never self-register)
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [restaurantName, setRestaurantName] = useState("");
-  const [cuisine, setCuisine] = useState("");
-  const [neighborhood, setNeighborhood] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -80,7 +80,7 @@ export default function Login({ staff = false }) {
       const dest =
         res.user.role === "staff" || res.user.role === "admin"
           ? "/staff"
-          : location.state?.from?.pathname || "/discover";
+          : returnTo(location.state?.from);
       navigate(dest, { replace: true });
     } else {
       setError(res.error);
@@ -111,31 +111,7 @@ export default function Login({ staff = false }) {
     setBusy(false);
     if (res.ok) {
       toast.success(`Welcome, ${res.user.name.split(" ")[0]}.`);
-      navigate(location.state?.from?.pathname || "/discover", { replace: true });
-    } else {
-      setError(res.error);
-    }
-  };
-
-  const doRegisterRestaurant = async () => {
-    if (password !== confirmPassword) {
-      setError("Passwords do not match.");
-      return;
-    }
-    setBusy(true);
-    setError("");
-    const res = await registerRestaurant({
-      owner_name: name,
-      email,
-      password,
-      restaurant_name: restaurantName,
-      cuisine,
-      neighborhood,
-    });
-    setBusy(false);
-    if (res.ok) {
-      toast.success(`Welcome to Table. Let's set up ${restaurantName}.`);
-      navigate("/staff/payouts", { replace: true });
+      navigate(returnTo(location.state?.from), { replace: true });
     } else {
       setError(res.error);
     }
@@ -147,8 +123,6 @@ export default function Login({ staff = false }) {
       await doCodeLogin();
     } else if (mode === "signin") {
       await doLogin(email, password);
-    } else if (staff) {
-      await doRegisterRestaurant();
     } else {
       await doRegister();
     }
@@ -191,77 +165,23 @@ export default function Login({ staff = false }) {
           </Link>
           <h1 className="mt-7 text-center text-4xl font-extrabold tracking-tight">
             {staff
-              ? mode === "signin"
-                ? "Restaurant sign in"
-                : "Register your restaurant"
+              ? "Restaurant sign in"
               : mode === "signin"
               ? "Welcome back"
               : "Create your account"}
           </h1>
           <p className="mt-2 mb-7 text-center text-[15px] text-[#8F8781]">
             {staff
-              ? mode === "signin"
-                ? "Manage bookings, loyalty and events for your venue."
-                : "Create your venue's account, then add payout details to start taking deposits."
+              ? "Manage bookings, loyalty and events for your venue."
               : mode === "signin"
               ? "Sign in to continue your dining journey."
               : "Join once. Your tier follows you to every room."}
           </p>
 
           <form onSubmit={submit} className="space-y-5" data-testid="login-form">
-            {staff && mode === "create" && (
-              <>
-                <div>
-                  <label className={fieldLabel}>Restaurant name</label>
-                  <div className={fieldWrap}>
-                    <Store strokeWidth={1.6} className="h-5 w-5 text-[#B8B2AA] shrink-0" />
-                    <input
-                      type="text"
-                      required
-                      maxLength={80}
-                      value={restaurantName}
-                      onChange={(e) => setRestaurantName(e.target.value)}
-                      data-testid="register-restaurant-name-input"
-                      className={fieldInput}
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                  <div>
-                    <label className={fieldLabel}>Cuisine</label>
-                    <div className={fieldWrap}>
-                      <input
-                        type="text"
-                        maxLength={60}
-                        placeholder="e.g. Italian"
-                        value={cuisine}
-                        onChange={(e) => setCuisine(e.target.value)}
-                        data-testid="register-cuisine-input"
-                        className={fieldInput}
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className={fieldLabel}>Neighbourhood</label>
-                    <div className={fieldWrap}>
-                      <input
-                        type="text"
-                        required
-                        maxLength={60}
-                        value={neighborhood}
-                        onChange={(e) => setNeighborhood(e.target.value)}
-                        data-testid="register-neighborhood-input"
-                        className={fieldInput}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </>
-            )}
-
             {mode === "create" && (
               <div>
-                <label className={fieldLabel}>{staff ? "Your name" : "Name"}</label>
+                <label className={fieldLabel}>Name</label>
                 <div className={fieldWrap}>
                   <User strokeWidth={1.6} className="h-5 w-5 text-[#B8B2AA] shrink-0" />
                   <input
@@ -377,54 +297,55 @@ export default function Login({ staff = false }) {
                   ? "One moment"
                   : mode === "signin"
                   ? "Sign in"
-                  : staff
-                  ? "Register restaurant"
                   : "Create account"}
               </span>
               <ArrowRight className="h-5 w-5" />
             </button>
           </form>
 
-          <p className="mt-5 text-center text-sm text-[#B8B2AA]">
-            {mode === "signin" ? (
-              <>
-                {staff ? "New restaurant?" : "New here?"}{" "}
-                <button
-                  type="button"
-                  onClick={() => switchMode("create")}
-                  data-testid="switch-to-create"
-                  className="font-semibold text-[#CE6A4A] hover:underline"
-                >
-                  {staff ? "Register your restaurant" : "Create an account"}
-                </button>
-              </>
-            ) : (
-              <>
-                {staff ? "Already registered?" : "Already a member?"}{" "}
-                <button
-                  type="button"
-                  onClick={() => switchMode("signin")}
-                  data-testid="switch-to-signin"
-                  className="font-semibold text-[#CE6A4A] hover:underline"
-                >
-                  Sign in
-                </button>
-              </>
-            )}
-          </p>
-
-          {!staff && mode === "signin" && (
-            <p className="mt-3 text-center text-xs text-[#8F8781]">
-              Own a restaurant?{" "}
-              <Link
-                to="/restaurant-login"
-                state={{ mode: "create" }}
-                data-testid="signup-as-restaurant"
-                className="font-semibold text-[#CE6A4A] hover:underline"
-              >
-                Sign up as a restaurant
-              </Link>
+          {staff ? (
+            <p className="mt-5 text-center text-xs text-[#8F8781]">
+              Table works with partner restaurants only. Your access code comes from the Table team.
             </p>
+          ) : (
+            <>
+              <p className="mt-5 text-center text-sm text-[#B8B2AA]">
+                {mode === "signin" ? (
+                  <>
+                    New here?{" "}
+                    <button
+                      type="button"
+                      onClick={() => switchMode("create")}
+                      data-testid="switch-to-create"
+                      className="font-semibold text-[#CE6A4A] hover:underline"
+                    >
+                      Create an account
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    Already a member?{" "}
+                    <button
+                      type="button"
+                      onClick={() => switchMode("signin")}
+                      data-testid="switch-to-signin"
+                      className="font-semibold text-[#CE6A4A] hover:underline"
+                    >
+                      Sign in
+                    </button>
+                  </>
+                )}
+              </p>
+
+              {mode === "signin" && (
+                <p className="mt-3 text-center text-xs text-[#8F8781]">
+                  Restaurant staff?{" "}
+                  <Link to="/restaurant-login" data-testid="restaurant-staff-signin" className="font-semibold text-[#CE6A4A] hover:underline">
+                    Restaurant sign in
+                  </Link>
+                </p>
+              )}
+            </>
           )}
         </div>
       </div>

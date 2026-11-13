@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { ArrowRight, QrCode, Sparkles, Gift, Utensils } from "lucide-react";
-import { api, assetUrl } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { BrandLockup } from "@/components/BrandLockup";
 import { FillingFastCard } from "@/components/FillingFastCard";
@@ -27,6 +27,28 @@ const btnGhost =
   "inline-flex items-center justify-center gap-2 rounded-full border border-white/30 px-7 py-3.5 text-[15px] font-bold text-white hover:bg-white/5 transition-colors";
 const wrap = "mx-auto max-w-[1280px] px-5 sm:px-10 lg:px-16";
 
+// Brand backdrop, not any one restaurant's photo. Drop a photo at frontend/public/hero.jpg to use it;
+// until then (or if it fails to load) the dark-and-gold gradient below is shown.
+function HeroBackdrop() {
+  const [photoOk, setPhotoOk] = useState(true);
+  return (
+    <>
+      <div
+        aria-hidden
+        className="absolute inset-0 bg-[radial-gradient(ellipse_70%_60%_at_80%_20%,rgba(214,160,80,0.22),transparent_60%),radial-gradient(ellipse_60%_50%_at_10%_90%,rgba(206,106,74,0.16),transparent_60%),linear-gradient(160deg,#1b1713_0%,#100e0c_100%)]"
+      />
+      {photoOk && (
+        <img
+          src="/hero.jpg"
+          alt=""
+          onError={() => setPhotoOk(false)}
+          className="absolute inset-0 h-full w-full object-cover object-[60%_80%]"
+        />
+      )}
+    </>
+  );
+}
+
 export default function Landing() {
   usePageTitle();
   const { user } = useAuth();
@@ -40,7 +62,6 @@ export default function Landing() {
     return <Navigate to={user.role === "staff" ? "/staff" : "/discover"} replace />;
   }
 
-  const hero = venues.find((v) => v.featured) || venues[0];
   const featured = venues.slice(0, 8);
 
   return (
@@ -68,8 +89,9 @@ export default function Landing() {
 
       {/* Hero */}
       <section className="relative min-h-[640px] sm:min-h-[720px] overflow-hidden">
-        {hero && <img src={assetUrl(hero.image_url)} alt="" className="absolute inset-0 h-full w-full object-cover" />}
-        <div className="absolute inset-0 bg-gradient-to-t from-[#121110] via-[#121110]/60 to-[#121110]/40" />
+        <HeroBackdrop />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#121110] via-[#121110]/45 to-[#121110]/25" />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#121110]/85 via-[#121110]/40 to-transparent" />
         <div className={`${wrap} relative flex min-h-[640px] sm:min-h-[720px] flex-col justify-end pb-16 sm:pb-24 pt-36`}>
           <div className="text-xs font-extrabold tracking-[0.2em] uppercase text-[#EE9B79]">Dine · Earn · Return</div>
           <h1 className="mt-4 max-w-3xl text-5xl sm:text-7xl font-extrabold tracking-[-0.045em] leading-[0.98]">
@@ -172,9 +194,9 @@ export default function Landing() {
             <Link to="/login" state={{ mode: "create" }} className={`${btnPrimary} mt-6`}>Create your account</Link>
           </div>
           <div className="rounded-2xl border border-white/10 p-8 sm:p-10">
-            <h3 className="text-3xl font-extrabold tracking-[-0.03em]">Own a restaurant?</h3>
-            <p className="mt-3 text-[#B8B2AA]">Fill tables, reward regulars and get discovered by members across the network.</p>
-            <Link to="/restaurant-login" className={`${btnGhost} mt-6`}>List your restaurant</Link>
+            <h3 className="text-3xl font-extrabold tracking-[-0.03em]">A partner restaurant?</h3>
+            <p className="mt-3 text-[#B8B2AA]">Sign in with your access code to manage bookings, rewards and events for your venue.</p>
+            <Link to="/restaurant-login" className={`${btnGhost} mt-6`}>Restaurant sign in</Link>
           </div>
         </div>
       </section>
