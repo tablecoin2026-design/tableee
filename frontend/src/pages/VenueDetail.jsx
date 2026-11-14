@@ -146,10 +146,7 @@ export default function VenueDetail() {
       label: "Private Dining\n& Groups",
       testId: "quick-private-dining",
       onClick: () =>
-        openConcierge({
-          initialType: "request",
-          initialMessage: `Hello, we'd like to enquire about private dining / a group booking at ${venue.name}. Party of ___ on ___.`,
-        }),
+        openConcierge({ mode: "group" }),
     },
     {
       icon: Ticket,
@@ -422,7 +419,7 @@ export default function VenueDetail() {
             Reserve a table
           </button>
           <button
-            onClick={requireLogin(() => setConciergeOpen(true))}
+            onClick={() => openConcierge()}
             data-testid="speak-with-room-button"
             className="mt-3 flex w-full items-center justify-center gap-2 rounded-full border border-[#E3B364]/60 py-4 text-sm font-bold hover:bg-white/5 transition-colors"
           >

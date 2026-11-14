@@ -2069,6 +2069,7 @@ export default function StaffDashboard() {
 
   // Live alerts: check for new reservations every 20s and say which restaurant received them.
   const seenBookings = useRef({ venue: null, ids: new Set() });
+  const seenNotes = useRef({ venue: null, ids: new Set() });
   useEffect(() => {
     if (!selectedId) return undefined;
     let stop = false;
@@ -2084,8 +2085,8 @@ export default function StaffDashboard() {
         }
         const fresh = data.filter((b) => !seen.ids.has(b.id) && b.status === "pending");
         data.forEach((b) => seen.ids.add(b.id));
+        setBookings(data);
         if (fresh.length) {
-          setBookings(data);
           fresh.slice(0, 3).forEach((b) =>
             toast.success(`New table booking at ${venueName}`, {
               description: `${b.member_name} · party of ${b.party_size} · ${b.date} at ${b.time}`,
@@ -2097,6 +2098,30 @@ export default function StaffDashboard() {
         }
       } catch {
         /* a failed poll is retried on the next tick */
+      }
+      try {
+        const { data } = await api.get(`/staff/venues/${selectedId}/concierge`);
+        if (stop) return;
+        const seen = seenNotes.current;
+        if (seen.venue !== selectedId) {
+          seenNotes.current = { venue: selectedId, ids: new Set(data.map((m) => m.id)) };
+          return;
+        }
+        const fresh = data.filter((m) => !seen.ids.has(m.id) && m.status === "pending");
+        data.forEach((m) => seen.ids.add(m.id));
+        setCorrespondence(data);
+        if (fresh.length) {
+          fresh.slice(0, 3).forEach((m) =>
+            toast.info(`New message at ${venueName}`, {
+              description: `${m.member_name || "A member"}: ${String(m.message).slice(0, 90)}`,
+              duration: 12000,
+              action: { label: "View", onClick: () => setTab("correspondence") },
+            }),
+          );
+          if (fresh.length > 3) toast.info(`${fresh.length - 3} more new messages at ${venueName}`);
+        }
+      } catch {
+        /* retried on the next tick */
       }
     };
     check();

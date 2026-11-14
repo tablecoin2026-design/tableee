@@ -8,9 +8,12 @@ const TYPES = [
   { code: "request", label: "A quiet request" },
 ];
 
-export function ConciergeModal({ venue, onClose, onSent, initialType = "preview_menu", initialMessage = "" }) {
-  const [type, setType] = useState(initialType);
-  const [message, setMessage] = useState(initialMessage);
+export function ConciergeModal({ venue, onClose, onSent, mode = "note", initialType = "preview_menu", initialMessage = "" }) {
+  const group = mode === "group";
+  const [type, setType] = useState(group ? "request" : initialType);
+  const [message, setMessage] = useState(group ? "" : initialMessage);
+  const [party, setParty] = useState("");
+  const [date, setDate] = useState("");
   const [busy, setBusy] = useState(false);
 
   const submit = async (e) => {
@@ -19,7 +22,9 @@ export function ConciergeModal({ venue, onClose, onSent, initialType = "preview_
     try {
       await api.post(`/venues/${venue.id}/concierge`, {
         request_type: type,
-        message: message.trim(),
+        message: group
+          ? `Private dining / group enquiry. Party of ${party}${date ? ` on ${date}` : ""}.${message.trim() ? `\n${message.trim()}` : ""}`
+          : message.trim(),
       });
       toast.success(`Your note has been sent to ${venue.name}.`);
       onSent?.();
@@ -50,15 +55,45 @@ export function ConciergeModal({ venue, onClose, onSent, initialType = "preview_
           <X strokeWidth={1.2} className="h-5 w-5" />
         </button>
 
-        <div className="overline">Concierge</div>
+        <div className="overline">{group ? "Private dining" : "Concierge"}</div>
         <h2 className="font-serif-display text-3xl mt-2 leading-tight">
-          Speak with {venue.name}.
+          {group ? `Groups & private dining at ${venue.name}.` : `Speak with ${venue.name}.`}
         </h2>
         <p className="text-sm text-[#8F8781] font-light mt-2">
-          A question for the room. To hold a table, use Reserve a table.
+          {group
+            ? "Tell the team your group size and date. They will reply with availability and options."
+            : "A question for the room. To hold a table, use Reserve a table."}
         </p>
 
         <form onSubmit={submit} className="mt-8 space-y-5" data-testid="concierge-form">
+          {group && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="overline block mb-2">Party size</label>
+                <input
+                  required
+                  type="number"
+                  min="2"
+                  value={party}
+                  onChange={(e) => setParty(e.target.value)}
+                  data-testid="concierge-party-input"
+                  className="w-full bg-transparent border border-[#262321] p-3 text-[#F2EDE7] font-light focus:border-[#CE6A4A] outline-none"
+                />
+              </div>
+              <div>
+                <label className="overline block mb-2">Preferred date</label>
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  data-testid="concierge-date-input"
+                  className="w-full bg-transparent border border-[#262321] p-3 text-[#F2EDE7] font-light focus:border-[#CE6A4A] outline-none [color-scheme:dark]"
+                />
+              </div>
+            </div>
+          )}
+
+          {!group && (
           <div>
             <label className="overline block mb-3">What may we do</label>
             <div className="grid grid-cols-2 gap-2">
@@ -79,16 +114,19 @@ export function ConciergeModal({ venue, onClose, onSent, initialType = "preview_
               ))}
             </div>
           </div>
+          )}
 
           <div>
-            <label className="overline block mb-2">Your note</label>
+            <label className="overline block mb-2">{group ? "Occasion or requests (optional)" : "Your note"}</label>
             <textarea
-              required
+              required={!group}
               rows={4}
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               placeholder={
-                type === "preview_menu"
+                group
+                  ? "Birthday, corporate dinner, dietary needs..."
+                  : type === "preview_menu"
                   ? "Would you send tonight's tasting menu ahead?"
                   : "Anything the room should know."
               }
@@ -100,7 +138,7 @@ export function ConciergeModal({ venue, onClose, onSent, initialType = "preview_
           <div className="pt-2 flex items-center gap-4">
             <button
               type="submit"
-              disabled={busy || !message.trim()}
+              disabled={busy || (group ? !party : !message.trim())}
               data-testid="concierge-submit"
               className="btn-primary"
             >
