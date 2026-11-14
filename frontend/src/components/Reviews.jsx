@@ -37,7 +37,7 @@ const timeAgo = (iso) => {
   return new Date(iso).toLocaleDateString("en-IN", { month: "short", year: "numeric" });
 };
 
-function ReviewForm({ venueId, mine, onSaved, onCancel }) {
+export function ReviewForm({ venueId, mine, onSaved, onCancel }) {
   const [rating, setRating] = useState(mine?.rating || 0);
   const [hover, setHover] = useState(0);
   const [text, setText] = useState(mine?.text || "");

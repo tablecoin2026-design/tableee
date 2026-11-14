@@ -4,6 +4,7 @@ import { CalendarCheck, ArrowRight, Star } from "lucide-react";
 import { toast } from "sonner";
 import { api, assetUrl, formatApiError } from "@/lib/api";
 import { AddToCalendar } from "@/components/AddToCalendar";
+import { ReviewForm, Stars } from "@/components/Reviews";
 import { cn } from "@/lib/utils";
 
 const serif = "font-['Cormorant_Garamond']";
@@ -26,6 +27,67 @@ function startsAt(b) {
   if (h < 6) d.setDate(d.getDate() + 1);
   d.setHours(h, m, 0, 0);
   return d;
+}
+
+// Shown on a visit the restaurant marked as seated: asks for a rating right in the booking card.
+function RateVisit({ b }) {
+  const [state, setState] = useState({ loaded: false, mine: null });
+  const [open, setOpen] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const { data } = await api.get(`/venues/${b.venue_id}/reviews`);
+      setState({ loaded: true, mine: data.mine || null });
+    } catch {
+      setState({ loaded: true, mine: null });
+    }
+  }, [b.venue_id]);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (!state.loaded) return null;
+  const { mine } = state;
+  return (
+    <div className="mt-4 rounded-xl border border-[#E8A33D]/25 bg-[#E8A33D]/[0.06] p-4" data-testid={`rate-visit-${b.id}`}>
+      {open ? (
+        <ReviewForm
+          venueId={b.venue_id}
+          mine={mine}
+          onCancel={() => setOpen(false)}
+          onSaved={() => {
+            setOpen(false);
+            load();
+          }}
+        />
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="text-sm font-bold text-[#F2EDE7]">
+              {mine ? "Your rating" : `How was your visit to ${b.venue_name}?`}
+            </div>
+            {mine ? (
+              <Stars value={mine.rating} size="mt-1 h-5 w-5" />
+            ) : (
+              <div className="mt-0.5 text-xs text-[#B8AA98]">Your rating helps other guests choose.</div>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            data-testid={`rate-visit-open-${b.id}`}
+            className={
+              mine
+                ? "rounded-full border border-white/15 px-5 py-2 text-sm font-semibold text-[#B8B2AA] transition-colors hover:border-white/40 hover:text-white"
+                : "rounded-full bg-[#E8A33D] px-5 py-2 text-sm font-bold text-[#2A1A08] transition-colors hover:brightness-110"
+            }
+          >
+            {mine ? "Edit" : "Rate your visit"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function BookingCard({ b, image, onCancel }) {
@@ -82,26 +144,22 @@ function BookingCard({ b, image, onCancel }) {
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
               <AddToCalendar booking={b} />
               {confirming ? (
-                <span className="flex items-center gap-3 text-sm">
-                  <button type="button" onClick={() => onCancel(b.id)} data-testid={`booking-confirm-cancel-${b.id}`} className="font-bold text-[#EE9B79] hover:text-[#F87171]">
+                <span className="flex items-center gap-2.5 text-sm">
+                  <button type="button" onClick={() => onCancel(b.id)} data-testid={`booking-confirm-cancel-${b.id}`} className="rounded-full bg-[#CE6A4A] px-5 py-2 font-bold text-[#0B0A0A] transition-colors hover:bg-[#E8A06E]">
                     Yes, release it
                   </button>
-                  <button type="button" onClick={() => setConfirming(false)} className="font-semibold text-[#8F8781] hover:text-white">
+                  <button type="button" onClick={() => setConfirming(false)} className="rounded-full border border-white/15 px-5 py-2 font-semibold text-[#F2EDE7] transition-colors hover:border-white/40 hover:bg-white/5">
                     Keep
                   </button>
                 </span>
               ) : (
-                <button type="button" onClick={() => setConfirming(true)} data-testid={`booking-cancel-${b.id}`} className="text-sm font-semibold text-[#8F8781] hover:text-[#E8A33D] transition-colors">
+                <button type="button" onClick={() => setConfirming(true)} data-testid={`booking-cancel-${b.id}`} className="rounded-full border border-white/15 px-5 py-2 text-sm font-semibold text-[#B8B2AA] transition-colors hover:border-[#E8A33D]/60 hover:text-[#E8A33D]">
                   Release the table
                 </button>
               )}
             </div>
           )}
-          {b.status === "seated" && (
-            <Link to={`/venues/${b.venue_id}#venue-reviews`} className="mt-4 inline-block text-sm font-bold text-[#EE9B79] hover:text-[#CE6A4A]">
-              Rate your visit →
-            </Link>
-          )}
+          {b.status === "seated" && <RateVisit b={b} />}
         </div>
       </div>
     </article>
@@ -114,32 +172,6 @@ function Eyebrow({ children }) {
       {children}
       <span className="h-px w-12 bg-[#E8A27F]/60" />
     </div>
-  );
-}
-
-function PartnerRow({ v }) {
-  return (
-    <Link
-      to={`/venues/${v.id}`}
-      data-testid={`partner-${v.id}`}
-      className="group flex items-center gap-4 rounded-2xl border border-white/10 bg-[#141312]/90 p-2.5 pr-4 transition-colors hover:border-[#CE6A4A]/40"
-    >
-      <img src={assetUrl(v.image_url)} alt="" loading="lazy" className="h-[88px] w-[88px] shrink-0 rounded-xl object-cover" />
-      <div className="min-w-0 flex-1">
-        <div className={cn(serif, "truncate text-[22px] font-semibold leading-tight text-[#F2EDE7]")}>{v.name}</div>
-        <div className="mt-0.5 truncate text-[13px] text-[#B8AA98]">{[v.cuisine, v.neighborhood].filter(Boolean).join(" · ")}</div>
-        {v.rating_avg > 0 && (
-          <div className="mt-1.5 flex items-center gap-1.5 text-[13px] text-[#B8AA98]">
-            <Star className="h-3.5 w-3.5 fill-[#E8A27F] text-[#E8A27F]" />
-            {v.rating_avg.toFixed(1)}
-            {v.rating_count > 0 && <span>({v.rating_count})</span>}
-          </div>
-        )}
-      </div>
-      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-[#CE6A4A]/60 text-[#CE6A4A] transition-colors group-hover:bg-[#CE6A4A] group-hover:text-[#0B0A0A]">
-        <ArrowRight className="h-4 w-4" />
-      </span>
-    </Link>
   );
 }
 
@@ -163,14 +195,6 @@ export default function Bookings() {
   }, [load]);
 
   const images = useMemo(() => Object.fromEntries(venues.map((v) => [v.id, v.image_url])), [venues]);
-  const partners = useMemo(
-    () =>
-      [...venues]
-        .sort((a, b) => (b.rating_avg || 0) - (a.rating_avg || 0) || (b.rating_count || 0) - (a.rating_count || 0))
-        .slice(0, 3),
-    [venues],
-  );
-
   const { upcoming, past } = useMemo(() => {
     const now = Date.now();
     const isUpcoming = (b) => ACTIVE.includes(b.status) && startsAt(b).getTime() + 90 * 60000 > now;
@@ -230,7 +254,7 @@ export default function Bookings() {
           ))}
         </div>
 
-        <div className="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,440px)]">
+        <div className="mt-6">
           <div className="space-y-4">
             {bookings === null ? (
               <div className="py-16 text-center text-sm text-[#8F8781]">Loading…</div>
@@ -264,18 +288,6 @@ export default function Bookings() {
             )}
           </div>
 
-          {partners.length > 0 && (
-            <aside className="lg:border-l lg:border-white/[0.08] lg:pl-8" data-testid="bookings-partners">
-              <Eyebrow>A little inspiration</Eyebrow>
-              <h2 className={cn(serif, "mt-3 text-3xl font-semibold text-[#F2EDE7]")}>Explore our partners</h2>
-              <p className="mt-1 text-[15px] text-[#B8AA98]">Handpicked restaurants loved by the community.</p>
-              <div className="mt-5 space-y-3">
-                {partners.map((v) => (
-                  <PartnerRow key={v.id} v={v} />
-                ))}
-              </div>
-            </aside>
-          )}
         </div>
       </div>
     </div>

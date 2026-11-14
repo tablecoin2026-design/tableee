@@ -78,15 +78,9 @@ function VenueTile({ venue }) {
       <div className="relative aspect-[16/10] overflow-hidden">
         <img src={assetUrl(venue.image_url)} alt={venue.name} loading="lazy" className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.04]" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/15 to-transparent" />
-        {venue.featured ? (
-          <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-[#F2EDE7] px-3.5 py-1.5 text-[13px] font-semibold text-[#1B1917]">
-            <Star className="h-3.5 w-3.5 fill-current" /> Trending
-          </span>
-        ) : (
-          <span className="absolute left-3 top-3 inline-flex items-center gap-2 rounded-full bg-black/60 px-3.5 py-1.5 text-[13px] font-medium text-white backdrop-blur-sm">
-            <span className={cn("h-2 w-2 rounded-full", dot)} /> {label}
-          </span>
-        )}
+        <span className="absolute left-3 top-3 inline-flex items-center gap-2 rounded-full bg-black/60 px-3.5 py-1.5 text-[13px] font-medium text-white backdrop-blur-sm">
+          <span className={cn("h-2 w-2 rounded-full", dot)} /> {label}
+        </span>
         <button
           type="button"
           aria-label={liked ? "Remove from favourites" : "Save to favourites"}

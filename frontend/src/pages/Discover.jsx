@@ -160,7 +160,7 @@ function Hero({ venues }) {
           </>
         )}
         <div className="absolute inset-y-0 left-[88px] flex max-w-[46%] flex-col justify-center">
-          <div className="text-[12px] font-bold tracking-[0.2em] uppercase text-[#CE6A4A]">Featured tonight</div>
+          <div className="text-[12px] font-bold tracking-[0.2em] uppercase text-[#CE6A4A]">Today&apos;s spotlight</div>
           <h2 className="mt-3 text-5xl font-extrabold tracking-tight leading-none">{venue.name}</h2>
           <div className="mt-3 flex flex-wrap items-center gap-x-3 text-[18px] text-white/90">
             <span>{[venue.cuisine, venue.neighborhood].filter(Boolean).join(" · ")}</span>
@@ -386,11 +386,16 @@ export default function Discover() {
       )
       .sort(cmp);
   }, [venues, active, query, cuisine, hood, price, sort]);
-  const featured = useMemo(
-    () => filtered.find((v) => v.featured) || filtered[0],
-    [filtered],
-  );
-  const tonight = useMemo(() => filtered.slice(0, 4), [filtered]);
+  // Fair rotation: with the default view the spotlight moves to the next partner each day (same for every
+  // guest). Any search, filter or sort the member picks keeps their own order.
+  const spotlight = useMemo(() => {
+    if (searching || filtered.length < 2) return filtered;
+    const stable = [...filtered].sort((a, b) => a.id.localeCompare(b.id));
+    const day = Math.floor((Date.now() - new Date().getTimezoneOffset() * 60000) / 86400000);
+    const k = day % stable.length;
+    return [...stable.slice(k), ...stable.slice(0, k)];
+  }, [filtered, searching]);
+  const tonight = useMemo(() => spotlight.slice(0, 4), [spotlight]);
   const fillingFast = useMemo(() => {
     const urgency = (v) =>
       v.availability === "fully_booked" || v.status === "At Capacity" ? 2 : v.wait_minutes > 0 ? 1 : 0;
@@ -410,12 +415,7 @@ export default function Discover() {
   const pointsAway = (tier) =>
     Math.max(0, (TIER_THRESHOLDS[tier] ?? 0) - info.lifetime_points);
 
-  const heroVenues = useMemo(() => {
-    const list = [...filtered];
-    const f = list.findIndex((v) => v.featured);
-    if (f > 0) list.unshift(...list.splice(f, 1));
-    return list.slice(0, 4);
-  }, [filtered]);
+  const heroVenues = useMemo(() => spotlight.slice(0, 4), [spotlight]);
   const fastRef = useRef(null);
   const scrollFast = (dir) => {
     const el = fastRef.current;
