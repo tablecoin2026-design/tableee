@@ -29,6 +29,7 @@ const BOOKING_STATUS_LABEL = {
   confirmed: "Confirmed",
   declined: "Regrets",
   seated: "Seated",
+  no_show: "Missed",
   cancelled: "Cancelled",
 };
 
@@ -38,6 +39,7 @@ const BOOKING_STATUS_COLOR = {
   confirmed: "text-[#EE9B79]",
   declined: "text-[#E8A33D]",
   seated: "text-[#7DBE8A]",
+  no_show: "text-[#E8A33D]",
   cancelled: "text-[#8F8781]",
 };
 

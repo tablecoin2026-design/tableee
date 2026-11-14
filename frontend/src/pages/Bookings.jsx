@@ -13,6 +13,7 @@ const STATUS = {
   confirmed: { label: "Confirmed", color: "text-[#7DBE8A]" },
   awaiting_payment: { label: "Awaiting payment", color: "text-[#E8A33D]" },
   seated: { label: "Dined", color: "text-[#8F8781]" },
+  no_show: { label: "Missed", color: "text-[#E8A33D]" },
   declined: { label: "Declined", color: "text-[#EE9B79]" },
   cancelled: { label: "Cancelled", color: "text-[#8F8781]" },
 };

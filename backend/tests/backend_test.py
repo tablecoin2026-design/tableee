@@ -436,30 +436,28 @@ class TestBookings:
         }, timeout=10)
         assert r.status_code == 400
 
-    def test_slot_capacity_6_then_409(self):
-        # Fill a slot with 6 pending bookings across mila (6 dupes) — API allows same user multiple
-        s = _session(MILA)
+    def test_slot_seats_then_409(self):
+        # Capacity is counted in seats (default 20). Admin bookings skip the per-member limits,
+        # so one account can fill a slot: 10 parties of 2 = 20 seats, the next party is refused.
+        s = _session(ADMIN)
         date = _future_date(30)
         time = "20:00"
-        codes = []
-        for i in range(6):
+        for i in range(10):
             r = s.post(f"{API}/bookings", json={
                 "venue_id": "venue-verre", "date": date, "time": time, "party_size": 2,
             }, timeout=10)
+            if r.status_code == 409:
+                break  # slot already partly used by an earlier run
             assert r.status_code == 200, f"slot fill {i} failed: {r.text}"
-            codes.append(r.json()["code"])
-        # 7th must 409
-        r7 = s.post(f"{API}/bookings", json={
+        r_full = s.post(f"{API}/bookings", json={
             "venue_id": "venue-verre", "date": date, "time": time, "party_size": 2,
         }, timeout=10)
-        assert r7.status_code == 409
-        assert "full" in r7.json()["detail"].lower()
+        assert r_full.status_code == 409
+        assert "full" in r_full.json()["detail"].lower() or "seat" in r_full.json()["detail"].lower()
 
-        # availability shows available=false, remaining=0 for that time
         av = s.get(f"{API}/venues/venue-verre/availability", params={"date": date}, timeout=10).json()
         slot = next(x for x in av["slots"] if x["time"] == time)
-        assert slot["available"] is False
-        assert slot["remaining"] == 0
+        assert slot["remaining"] < 2
 
     def test_cancel_own_booking(self):
         s = _session(MILA)

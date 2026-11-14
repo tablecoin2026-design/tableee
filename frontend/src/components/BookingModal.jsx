@@ -92,6 +92,11 @@ export function BookingModal({ venue, onClose, onBooked }) {
     };
   }, [venue.id, selectedDate, confirmed]);
 
+  useEffect(() => {
+    const cur = slots.find((x) => x.time === selectedTime);
+    if (selectedTime && cur && (!cur.available || cur.remaining < partySize)) setSelectedTime("");
+  }, [partySize, slots, selectedTime]);
+
   const payAndConfirm = async (booking, razorpay) => {
     const scriptLoaded = await loadRazorpayScript();
     if (!scriptLoaded) {
@@ -337,15 +342,16 @@ export function BookingModal({ venue, onClose, onBooked }) {
                         <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
                           {g.slots.map((s) => {
                             const active = s.time === selectedTime;
-                            const disabled = !s.available;
-                            const few = !disabled && s.remaining <= 2;
+                            const tooBig = s.available && s.remaining < partySize;
+                            const disabled = !s.available || tooBig;
+                            const few = !disabled && s.remaining <= Math.max(4, partySize);
                             return (
                               <button
                                 key={s.time}
                                 type="button"
                                 disabled={disabled}
                                 onClick={() => setSelectedTime(s.time)}
-                                title={s.passed ? "This time has passed" : disabled ? "Fully booked" : undefined}
+                                title={s.passed ? "This time has passed" : s.closed ? "Not taking bookings" : tooBig ? `Only ${s.remaining} seats left` : disabled ? "Fully booked" : undefined}
                                 data-testid={`booking-slot-${s.time}`}
                                 className={cn(
                                   "rounded-xl border px-2 py-2.5 text-center tabular-nums transition-all duration-200",
@@ -363,7 +369,7 @@ export function BookingModal({ venue, onClose, onBooked }) {
                                     active ? "text-[#2A0F07]/70" : disabled ? "text-[#6B6560]" : few ? "text-[#E8A33D]" : "text-[#7DBE8A]",
                                   )}
                                 >
-                                  {s.passed ? "Passed" : disabled ? "Booked" : few ? `${s.remaining} left` : "Open"}
+                                  {s.passed ? "Passed" : s.closed ? "Closed" : tooBig ? `${s.remaining} seats` : disabled ? "Full" : few ? `${s.remaining} seats` : "Open"}
                                 </span>
                               </button>
                             );

@@ -67,6 +67,7 @@ const BOOKING_STATUS_COLOR = {
   confirmed: "text-[color:var(--st-gold)]",
   declined: "text-[color:var(--st-warn)]",
   seated: "text-[color:var(--st-ok)]",
+  no_show: "text-[color:var(--st-warn)]",
   cancelled: "text-[color:var(--st-faint)]",
 };
 
@@ -187,6 +188,16 @@ function BookingRow({ booking, onAct }) {
           >
             Mark seated
           </button>
+          <button
+            type="button"
+            onClick={() => act("no_show")}
+            disabled={busy}
+            data-testid={`booking-noshow-${booking.id}`}
+            className="overline ml-5 text-[color:var(--st-muted)] hover:text-[color:var(--st-warn)] transition-colors duration-300"
+            title="Guest never arrived. Counts toward their booking limit and the deposit is kept."
+          >
+            Didn't arrive
+          </button>
         </div>
       )}
     </div>
@@ -220,7 +231,7 @@ function BookingDepositControl({ venueId, amount, onSaved }) {
       </span>
       <div>
         <label htmlFor="deposit" className="block text-sm font-semibold tracking-[0.15em] uppercase text-[color:var(--st-text)]">
-          Deposit required per booking (₹)
+          Booking deposit (₹, same for every booking)
         </label>
         <p className="mt-2 text-[15px] text-[color:var(--st-soft)]">
           Charged via Razorpay when a guest reserves a table, adjusted against their final bill.
@@ -249,6 +260,123 @@ function BookingDepositControl({ venueId, amount, onSaved }) {
         >
           {busy ? "Saving" : "Save"}
         </button>
+      </div>
+    </div>
+  );
+}
+
+function SlotSeatsControl({ venueId, seats, onSaved }) {
+  const [value, setValue] = useState(seats || 20);
+  const [busy, setBusy] = useState(false);
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [slots, setSlots] = useState([]);
+
+  const loadSlots = useCallback(async () => {
+    try {
+      const { data } = await api.get(`/venues/${venueId}/availability`, { params: { date } });
+      setSlots(data.slots || []);
+    } catch {
+      setSlots([]);
+    }
+  }, [venueId, date]);
+  useEffect(() => {
+    loadSlots();
+  }, [loadSlots]);
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      await api.patch(`/staff/venues/${venueId}/slot-seats`, { seats: Number(value) || 1 });
+      toast.success("Seats per slot updated.");
+      onSaved?.();
+      loadSlots();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Could not save seats.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggle = async (s) => {
+    try {
+      await api.post(`/staff/venues/${venueId}/closed-slots`, { date, time: s.time, closed: !s.closed });
+      loadSlots();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Could not update that time.");
+    }
+  };
+
+  return (
+    <div className="rounded-2xl border border-[color:var(--st-border)] bg-[color:var(--st-card)] p-6" data-testid="slot-seats-control">
+      <div className="flex flex-wrap items-end gap-4">
+        <div>
+          <label htmlFor="slot-seats" className="block text-sm font-semibold tracking-[0.15em] uppercase text-[color:var(--st-text)]">
+            Seats per 30-minute slot
+          </label>
+          <p className="mt-2 max-w-xl text-[15px] text-[color:var(--st-soft)]">
+            How many guests you can seat at the same time. A party of 4 uses 4 seats; the slot shows Full when they run out.
+          </p>
+          <input
+            id="slot-seats"
+            type="number"
+            min={1}
+            max={500}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            data-testid="slot-seats-input"
+            className="mt-4 w-40 rounded-xl border border-[color:var(--st-dep-fieldborder)] bg-[color:var(--st-dep-field)] px-5 py-3 text-lg outline-none focus:border-[color:var(--st-gold)] transition-colors"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={save}
+          disabled={busy}
+          data-testid="slot-seats-save"
+          className="rounded-xl bg-gradient-to-r from-[#CE6A4A] to-[#B5573A] px-8 py-3.5 text-xs font-semibold tracking-[0.2em] uppercase text-[#0B0A0A] hover:brightness-110 disabled:opacity-50 transition"
+        >
+          {busy ? "Saving" : "Save"}
+        </button>
+      </div>
+
+      <div className="mt-8 border-t border-[color:var(--st-border)] pt-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold tracking-[0.15em] uppercase text-[color:var(--st-text)]">Open or close a time</div>
+            <p className="mt-1 text-sm text-[color:var(--st-soft)]">Tap a time to stop taking bookings for it (private event, staff shortage). Tap again to reopen.</p>
+          </div>
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            data-testid="slot-date-input"
+            className="rounded-xl border border-[color:var(--st-dep-fieldborder)] bg-[color:var(--st-dep-field)] px-4 py-2.5 outline-none focus:border-[color:var(--st-gold)]"
+          />
+        </div>
+        <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-8">
+          {slots.length === 0 && <div className="col-span-full text-sm text-[color:var(--st-soft)]">No bookable times on this date.</div>}
+          {slots.map((s) => (
+            <button
+              key={s.time}
+              type="button"
+              disabled={s.passed}
+              onClick={() => toggle(s)}
+              data-testid={`slot-toggle-${s.time}`}
+              className={cn(
+                "rounded-xl border px-2 py-2.5 text-center text-sm tabular-nums transition-colors",
+                s.passed
+                  ? "cursor-not-allowed border-[color:var(--st-border)] opacity-40"
+                  : s.closed
+                    ? "border-[color:var(--st-warn)] text-[color:var(--st-warn)]"
+                    : "border-[color:var(--st-border)] hover:border-[color:var(--st-gold)]",
+              )}
+            >
+              <span className="block font-semibold">{s.time}</span>
+              <span className="block text-[10px] uppercase tracking-[0.1em]">
+                {s.passed ? "Passed" : s.closed ? "Closed" : `${s.remaining} seats left`}
+              </span>
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -1888,6 +2016,47 @@ export default function StaffDashboard() {
     [venues, selectedId],
   );
 
+  // Live alerts: check for new reservations every 20s and say which restaurant received them.
+  const seenBookings = useRef({ venue: null, ids: new Set() });
+  useEffect(() => {
+    if (!selectedId) return undefined;
+    let stop = false;
+    const venueName = venues.find((v) => v.id === selectedId)?.name || "your restaurant";
+    const check = async () => {
+      try {
+        const { data } = await api.get(`/staff/venues/${selectedId}/bookings`);
+        if (stop) return;
+        const seen = seenBookings.current;
+        if (seen.venue !== selectedId) {
+          seenBookings.current = { venue: selectedId, ids: new Set(data.map((b) => b.id)) };
+          return;
+        }
+        const fresh = data.filter((b) => !seen.ids.has(b.id) && b.status === "pending");
+        data.forEach((b) => seen.ids.add(b.id));
+        if (fresh.length) {
+          setBookings(data);
+          fresh.slice(0, 3).forEach((b) =>
+            toast.success(`New table booking at ${venueName}`, {
+              description: `${b.member_name} · party of ${b.party_size} · ${b.date} at ${b.time}`,
+              duration: 12000,
+              action: { label: "View", onClick: () => setTab("bookings") },
+            }),
+          );
+          if (fresh.length > 3) toast.info(`${fresh.length - 3} more new bookings at ${venueName}`);
+        }
+      } catch {
+        /* a failed poll is retried on the next tick */
+      }
+    };
+    check();
+    const t = setInterval(check, 20000);
+    return () => {
+      stop = true;
+      clearInterval(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, venues]);
+
   const pendingCount = correspondence.filter((c) => c.status === "pending").length;
   const pendingBookings = bookings.filter((b) => b.status === "pending").length;
 
@@ -2237,6 +2406,12 @@ export default function StaffDashboard() {
             key={selectedVenue.id}
             venueId={selectedId}
             amount={selectedVenue.booking_deposit_amount}
+            onSaved={() => loadVenues()}
+          />
+          <SlotSeatsControl
+            key={`seats-${selectedVenue.id}`}
+            venueId={selectedId}
+            seats={selectedVenue.slot_seats}
             onSaved={() => loadVenues()}
           />
           {bookings.length === 0 ? (

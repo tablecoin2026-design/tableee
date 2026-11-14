@@ -531,12 +531,22 @@ class BookingIn(BaseModel):
 
 
 class BookingUpdateIn(BaseModel):
-    status: Literal["confirmed", "declined", "seated"]
+    status: Literal["confirmed", "declined", "seated", "no_show"]
     staff_reply: Optional[str] = None
 
 
 class BookingDepositIn(BaseModel):
     amount: int = Field(ge=0, le=100000)
+
+
+class SlotSeatsIn(BaseModel):
+    seats: int = Field(ge=1, le=500)
+
+
+class SlotCloseIn(BaseModel):
+    date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    time: str = Field(pattern=r"^\d{2}:\d{2}$")
+    closed: bool = True
 
 
 class VerifyPaymentIn(BaseModel):
@@ -1586,6 +1596,27 @@ async def update_booking_deposit(
     return {"ok": True, "booking_deposit_amount": payload.amount}
 
 
+@api.patch("/staff/venues/{venue_id}/slot-seats")
+async def update_slot_seats(venue_id: str, payload: SlotSeatsIn, user: dict = Depends(require_staff_or_admin)):
+    _assert_staff_can_manage(user, venue_id)
+    result = await db.venues.update_one({"id": venue_id}, {"$set": {"slot_seats": payload.seats}})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Venue not found")
+    return {"ok": True, "slot_seats": payload.seats}
+
+
+@api.post("/staff/venues/{venue_id}/closed-slots")
+async def set_slot_closed(venue_id: str, payload: SlotCloseIn, user: dict = Depends(require_staff_or_admin)):
+    """Stop (or resume) taking bookings for one time, e.g. a private event."""
+    _assert_staff_can_manage(user, venue_id)
+    key = _slot_key(payload.date, payload.time)
+    op = {"$addToSet": {"closed_slots": key}} if payload.closed else {"$pull": {"closed_slots": key}}
+    result = await db.venues.update_one({"id": venue_id}, op)
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Venue not found")
+    return {"ok": True, "closed": payload.closed}
+
+
 @api.patch("/staff/venues/{venue_id}/qr-slug")
 async def update_qr_slug(
     venue_id: str, payload: QrSlugIn, user: dict = Depends(require_staff_or_admin)
@@ -1904,7 +1935,19 @@ async def update_concierge_message(
 # ---------------------------------------------------------------------------
 # Bookings — live reservations with confirmed codes
 # ---------------------------------------------------------------------------
-SLOT_CAPACITY_PER_TIME = 6  # seats-worth of parties per 30-min slot
+DEFAULT_SLOT_SEATS = 20  # guests a restaurant can seat per 30-min slot until staff set their own number
+MAX_ACTIVE_BOOKINGS = 2  # upcoming reservations one member can hold at once
+CANCEL_LIMIT = 3  # cancellations / no-shows within CANCEL_WINDOW_DAYS before booking is paused
+CANCEL_WINDOW_DAYS = 30
+CANCEL_BLOCK_DAYS = 7
+
+
+def _slot_seats(venue: dict) -> int:
+    return int(venue.get("slot_seats") or DEFAULT_SLOT_SEATS)
+
+
+def _slot_key(date: str, time: str) -> str:
+    return f"{date} {time}"
 
 
 def _generate_slots(hours: str) -> list:
@@ -1961,21 +2004,65 @@ async def venue_availability(venue_id: str, date: str, user: dict = Depends(get_
     if not venue:
         raise HTTPException(status_code=404, detail="Venue not found")
     slots = _generate_slots(venue.get("hours", ""))
+    seats = _slot_seats(venue)
+    closed = set(venue.get("closed_slots") or [])
     booked_docs = await db.bookings.find(
-        _slot_taken_filter(venue_id, date), {"_id": 0, "time": 1}
+        _slot_taken_filter(venue_id, date), {"_id": 0, "time": 1, "party_size": 1}
     ).to_list(500)
-    booked_times = [b["time"] for b in booked_docs]
+    used = {}
+    for b in booked_docs:
+        used[b["time"]] = used.get(b["time"], 0) + (b.get("party_size") or 1)
     result = []
-    for s in slots:
-        count = booked_times.count(s)
-        passed = _booking_start({"date": date, "time": s}) <= datetime.now(timezone.utc)
+    for sl in slots:
+        passed = _booking_start({"date": date, "time": sl}) <= datetime.now(timezone.utc)
+        is_closed = _slot_key(date, sl) in closed
+        left = max(0, seats - used.get(sl, 0))
         result.append({
-            "time": s,
-            "remaining": 0 if passed else max(0, SLOT_CAPACITY_PER_TIME - count),
-            "available": count < SLOT_CAPACITY_PER_TIME and not passed,
+            "time": sl,
+            "remaining": 0 if (passed or is_closed) else left,
+            "available": left > 0 and not passed and not is_closed,
             "passed": passed,
+            "closed": is_closed,
         })
-    return {"date": date, "venue_id": venue_id, "hours": venue.get("hours"), "slots": result}
+    return {"date": date, "venue_id": venue_id, "hours": venue.get("hours"), "seats": seats, "slots": result}
+
+
+async def _enforce_booking_limits(member_id: str, date: str, time: str):
+    """Stop one person from reserving tables everywhere: cap upcoming bookings, forbid double-booking a
+    time, and pause booking after repeated cancellations or no-shows."""
+    now = datetime.now(timezone.utc)
+    hold_cutoff = (now - timedelta(minutes=PAYMENT_HOLD_MINUTES)).isoformat()
+    mine = await db.bookings.find(
+        {
+            "member_id": member_id,
+            "$or": [
+                {"status": {"$in": ["pending", "confirmed"]}},
+                {"status": "awaiting_payment", "created_at": {"$gte": hold_cutoff}},
+            ],
+        },
+        {"_id": 0, "date": 1, "time": 1},
+    ).to_list(100)
+    upcoming = [b for b in mine if _booking_start(b) > now]
+    if any(b["date"] == date and b["time"] == time for b in upcoming):
+        raise HTTPException(status_code=409, detail="You already have a table at that time. Pick a different time.")
+    if len(upcoming) >= MAX_ACTIVE_BOOKINGS:
+        raise HTTPException(
+            status_code=409,
+            detail=f"You can hold {MAX_ACTIVE_BOOKINGS} upcoming reservations at a time. Cancel one or dine first to book another.",
+        )
+    since = (now - timedelta(days=CANCEL_WINDOW_DAYS)).isoformat()
+    strikes = await db.bookings.find(
+        {"member_id": member_id, "strike_at": {"$gte": since}}, {"_id": 0, "strike_at": 1}
+    ).to_list(100)
+    if len(strikes) >= CANCEL_LIMIT:
+        latest = max(datetime.fromisoformat(x["strike_at"]) for x in strikes)
+        until = latest + timedelta(days=CANCEL_BLOCK_DAYS)
+        if until > now:
+            when = until.astimezone(BOOKING_TZ).strftime("%d %b")
+            raise HTTPException(
+                status_code=409,
+                detail=f"Booking is paused after {CANCEL_LIMIT} cancellations or missed tables in {CANCEL_WINDOW_DAYS} days. You can book again from {when}.",
+            )
 
 
 @api.post("/bookings")
@@ -1990,9 +2077,23 @@ async def create_booking(payload: BookingIn, user: dict = Depends(get_current_us
         raise HTTPException(status_code=400, detail="That time isn't offered by this room")
     if _booking_start({"date": payload.date, "time": payload.time}) <= datetime.now(timezone.utc):
         raise HTTPException(status_code=400, detail="That time has already passed — pick a later slot.")
-    taken = await db.bookings.count_documents(_slot_taken_filter(payload.venue_id, payload.date, payload.time))
-    if taken >= SLOT_CAPACITY_PER_TIME:
-        raise HTTPException(status_code=409, detail="That time is full — try another slot.")
+    if _slot_key(payload.date, payload.time) in set(venue.get("closed_slots") or []):
+        raise HTTPException(status_code=409, detail="This time isn't taking bookings. Try another slot.")
+    taken_docs = await db.bookings.find(
+        _slot_taken_filter(payload.venue_id, payload.date, payload.time), {"_id": 0, "party_size": 1}
+    ).to_list(500)
+    used = sum((b.get("party_size") or 1) for b in taken_docs)
+    seats = _slot_seats(venue)
+    if used + payload.party_size > seats:
+        left = max(0, seats - used)
+        detail = (
+            "That time is full. Try another slot."
+            if left == 0
+            else f"Only {left} seat{'s' if left != 1 else ''} left at that time. Try a smaller party or another slot."
+        )
+        raise HTTPException(status_code=409, detail=detail)
+    if user.get("role") == "member":
+        await _enforce_booking_limits(user["id"], payload.date, payload.time)
 
     deposit_amount = venue.get("booking_deposit_amount", 0)
     requires_payment = deposit_amount > 0
@@ -2127,12 +2228,14 @@ async def cancel_booking(booking_id: str, user: dict = Depends(get_current_user)
         raise HTTPException(status_code=404, detail="Booking not found")
     if b["member_id"] != user["id"] and user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Not your booking")
-    if b["status"] in ("declined", "cancelled", "seated"):
+    if b["status"] in ("declined", "cancelled", "seated", "no_show"):
         raise HTTPException(status_code=400, detail="This reservation is already resolved")
-    await db.bookings.update_one(
-        {"id": booking_id},
-        {"$set": {"status": "cancelled", "responded_at": _now_iso()}},
-    )
+    cancel_set = {"status": "cancelled", "responded_at": _now_iso()}
+    # Cancelling a confirmed/pending table counts toward the member's cancellation limit
+    # (dismissing the payment window before a deposit is paid does not).
+    if b["member_id"] == user["id"] and b["status"] != "awaiting_payment":
+        cancel_set["strike_at"] = _now_iso()
+    await db.bookings.update_one({"id": booking_id}, {"$set": cancel_set})
     # A paid deposit comes back if the member cancels early enough; otherwise the restaurant keeps it.
     refund = None
     shown = {**b, "status": "cancelled"}
@@ -2168,11 +2271,13 @@ async def update_booking(
     if not b:
         raise HTTPException(status_code=404, detail="Booking not found")
     _assert_staff_can_manage(user, b["venue_id"])
-    if b["status"] in ("cancelled", "declined", "seated"):
-        raise HTTPException(status_code=400, detail=f"This reservation is already {b['status']}")
+    if b["status"] in ("cancelled", "declined", "seated", "no_show"):
+        raise HTTPException(status_code=400, detail=f"This reservation is already {b['status'].replace('_', ' ')}")
     if b["status"] == "awaiting_payment":
         raise HTTPException(status_code=400, detail="This reservation is still waiting for the deposit payment")
     updates = {"status": payload.status, "responded_at": _now_iso()}
+    if payload.status == "no_show":
+        updates["strike_at"] = _now_iso()  # a missed table counts like a late cancellation
     if payload.staff_reply is not None:
         updates["staff_reply"] = payload.staff_reply.strip() or None
     await db.bookings.update_one({"id": booking_id}, {"$set": updates})
