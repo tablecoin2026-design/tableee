@@ -248,6 +248,7 @@ BOOKING_EMAIL_COPY = {
     "confirmed": ("Confirmed: your table at {venue}", "Good news: {venue} has confirmed your table."),
     "declined": ("Your table at {venue} couldn't be confirmed", "Sorry, {venue} couldn't host you at that time."),
     "cancelled": ("Your reservation at {venue} is cancelled", "Your reservation has been cancelled."),
+    "expired": ("Your table request at {venue} wasn't confirmed", "Sorry, {venue} didn't confirm this request in time, so it has been closed."),
 }
 
 
@@ -537,6 +538,10 @@ class BookingUpdateIn(BaseModel):
 
 class BookingDepositIn(BaseModel):
     amount: int = Field(ge=0, le=100000)
+
+
+class AutoConfirmIn(BaseModel):
+    enabled: bool
 
 
 class SlotSeatsIn(BaseModel):
@@ -1596,6 +1601,16 @@ async def update_booking_deposit(
     return {"ok": True, "booking_deposit_amount": payload.amount}
 
 
+@api.patch("/staff/venues/{venue_id}/auto-confirm")
+async def update_auto_confirm(venue_id: str, payload: AutoConfirmIn, user: dict = Depends(require_staff_or_admin)):
+    """On: new bookings are confirmed instantly. Off: staff confirm each one."""
+    _assert_staff_can_manage(user, venue_id)
+    result = await db.venues.update_one({"id": venue_id}, {"$set": {"auto_confirm": payload.enabled}})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Venue not found")
+    return {"ok": True, "auto_confirm": payload.enabled}
+
+
 @api.patch("/staff/venues/{venue_id}/slot-seats")
 async def update_slot_seats(venue_id: str, payload: SlotSeatsIn, user: dict = Depends(require_staff_or_admin)):
     _assert_staff_can_manage(user, venue_id)
@@ -2097,6 +2112,7 @@ async def create_booking(payload: BookingIn, user: dict = Depends(get_current_us
 
     deposit_amount = venue.get("booking_deposit_amount", 0)
     requires_payment = deposit_amount > 0
+    auto_confirm = bool(venue.get("auto_confirm"))
     if requires_payment and not razorpay_configured():
         raise HTTPException(status_code=503, detail="Deposits aren't set up for this venue yet.")
 
@@ -2114,10 +2130,10 @@ async def create_booking(payload: BookingIn, user: dict = Depends(get_current_us
         "time": payload.time,
         "party_size": payload.party_size,
         "note": (payload.note or "").strip() or None,
-        "status": "awaiting_payment" if requires_payment else "pending",
+        "status": "awaiting_payment" if requires_payment else ("confirmed" if auto_confirm else "pending"),
         "staff_reply": None,
         "created_at": _now_iso(),
-        "responded_at": None,
+        "responded_at": _now_iso() if (auto_confirm and not requires_payment) else None,
         "deposit_amount": deposit_amount,
         "payment_status": "created" if requires_payment else "not_required",
         "razorpay_order_id": None,
@@ -2138,7 +2154,7 @@ async def create_booking(payload: BookingIn, user: dict = Depends(get_current_us
     await db.bookings.insert_one(booking)
     booking.pop("_id", None)
     if not requires_payment:
-        asyncio.create_task(send_booking_email(dict(booking), "received"))
+        asyncio.create_task(send_booking_email(dict(booking), "confirmed" if auto_confirm else "received"))
     return {"booking": booking, "requires_payment": requires_payment, "razorpay": razorpay_info}
 
 
@@ -2153,7 +2169,8 @@ async def _settle_payment(order_id: str, payment_id: str):
     cancelled = b["status"] == "cancelled"
     updates = {"payment_status": "paid", "razorpay_payment_id": payment_id}
     if not cancelled:
-        updates["status"] = "pending"
+        v = await db.venues.find_one({"id": b["venue_id"]}, {"_id": 0, "auto_confirm": 1})
+        updates["status"] = "confirmed" if (v or {}).get("auto_confirm") else "pending"
     res = await db.bookings.update_one({"id": b["id"], "payment_status": "created"}, {"$set": updates})
     if res.modified_count == 0:
         return await db.bookings.find_one({"id": b["id"]}, {"_id": 0}), False
@@ -2180,8 +2197,8 @@ async def razorpay_webhook(request: Request):
         pay = (event.get("payload", {}).get("payment", {}) or {}).get("entity", {}) or {}
         if pay.get("order_id") and pay.get("id"):
             settled, changed = await _settle_payment(pay["order_id"], pay["id"])
-            if changed and settled and settled["status"] == "pending":
-                asyncio.create_task(send_booking_email(dict(settled), "received"))
+            if changed and settled and settled["status"] in ("pending", "confirmed"):
+                asyncio.create_task(send_booking_email(dict(settled), "confirmed" if settled["status"] == "confirmed" else "received"))
     return {"ok": True}
 
 
@@ -2209,12 +2226,38 @@ async def verify_booking_payment(
             detail="Your hold on this table had already been released, so the payment is being refunded. Please book again.",
         )
     if changed:
-        asyncio.create_task(send_booking_email(dict(settled), "received"))
+        asyncio.create_task(send_booking_email(dict(settled), "confirmed" if settled["status"] == "confirmed" else "received"))
     return settled
+
+
+STALE_AFTER_MINUTES = 90  # a request nobody answered this long after its start time is closed
+
+
+async def _expire_stale_bookings(extra: Optional[dict] = None):
+    """Close pending requests whose time has passed without the restaurant answering: free the seats,
+    refund any deposit (it isn't the guest's fault) and tell the guest."""
+    now = datetime.now(timezone.utc)
+    query = {"status": "pending", **(extra or {})}
+    for b in await db.bookings.find(query, {"_id": 0}).to_list(500):
+        try:
+            if _booking_start(b) + timedelta(minutes=STALE_AFTER_MINUTES) > now:
+                continue
+        except (ValueError, KeyError):
+            continue
+        res = await db.bookings.update_one(
+            {"id": b["id"], "status": "pending"}, {"$set": {"status": "expired", "responded_at": _now_iso()}}
+        )
+        if res.modified_count == 0:
+            continue
+        shown = {**b, "status": "expired"}
+        if b.get("payment_status") == "paid" and b.get("razorpay_payment_id"):
+            shown["payment_status"] = await _refund_booking(b)
+        asyncio.create_task(send_booking_email(shown, "expired"))
 
 
 @api.get("/members/me/bookings")
 async def my_bookings(user: dict = Depends(get_current_user)):
+    await _expire_stale_bookings({"member_id": user["id"]})
     items = await db.bookings.find(
         {"member_id": user["id"]}, {"_id": 0}
     ).sort("created_at", -1).to_list(50)
@@ -2228,7 +2271,7 @@ async def cancel_booking(booking_id: str, user: dict = Depends(get_current_user)
         raise HTTPException(status_code=404, detail="Booking not found")
     if b["member_id"] != user["id"] and user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Not your booking")
-    if b["status"] in ("declined", "cancelled", "seated", "no_show"):
+    if b["status"] in ("declined", "cancelled", "seated", "no_show", "expired"):
         raise HTTPException(status_code=400, detail="This reservation is already resolved")
     cancel_set = {"status": "cancelled", "responded_at": _now_iso()}
     # Cancelling a confirmed/pending table counts toward the member's cancellation limit
@@ -2255,6 +2298,7 @@ async def cancel_booking(booking_id: str, user: dict = Depends(get_current_user)
 @api.get("/staff/venues/{venue_id}/bookings")
 async def venue_bookings(venue_id: str, user: dict = Depends(require_staff_or_admin)):
     _assert_staff_can_manage(user, venue_id)
+    await _expire_stale_bookings({"venue_id": venue_id})
     items = await db.bookings.find(
         {"venue_id": venue_id, "status": {"$ne": "awaiting_payment"}}, {"_id": 0}
     ).sort([("date", 1), ("time", 1)]).to_list(200)
@@ -2271,7 +2315,7 @@ async def update_booking(
     if not b:
         raise HTTPException(status_code=404, detail="Booking not found")
     _assert_staff_can_manage(user, b["venue_id"])
-    if b["status"] in ("cancelled", "declined", "seated", "no_show"):
+    if b["status"] in ("cancelled", "declined", "seated", "no_show", "expired"):
         raise HTTPException(status_code=400, detail=f"This reservation is already {b['status'].replace('_', ' ')}")
     if b["status"] == "awaiting_payment":
         raise HTTPException(status_code=400, detail="This reservation is still waiting for the deposit payment")
@@ -3018,6 +3062,11 @@ async def seed_database():
             member = await db.users.find_one({"email": u["email"].lower()}, {"_id": 0, "id": 1})
             if member:
                 await _reconcile_demo_ledger(member["id"], u.get("ritual_points_balance", 0))
+
+    try:
+        await _expire_stale_bookings()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Stale booking sweep failed: %s", e)
 
     # Indexes
     await db.users.create_index("email", unique=True)

@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 
-const SUPPORT_EMAIL = process.env.REACT_APP_SUPPORT_EMAIL || "";
+import { SUPPORT_EMAIL } from "@/lib/site";
 
 const COLUMNS = [
   {

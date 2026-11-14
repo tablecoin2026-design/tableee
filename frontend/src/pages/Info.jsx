@@ -3,7 +3,7 @@ import { BrandLockup } from "@/components/BrandLockup";
 import { Footer } from "@/components/Footer";
 import { usePageTitle } from "@/lib/usePageTitle";
 
-const SUPPORT_EMAIL = process.env.REACT_APP_SUPPORT_EMAIL || "";
+import { SUPPORT_EMAIL } from "@/lib/site";
 const LEGAL_NAME = process.env.REACT_APP_LEGAL_NAME || "";
 const BUSINESS_ADDRESS = process.env.REACT_APP_BUSINESS_ADDRESS || "";
 const SUPPORT_PHONE = process.env.REACT_APP_SUPPORT_PHONE || "";
@@ -204,6 +204,12 @@ export default function Info({ slug }) {
               )}
             </section>
           ))}
+          {slug !== "contact" && (
+            <p className="rounded-2xl border border-white/[0.08] bg-[#1C1B19] p-5 text-[#B8B2AA]" data-testid="info-help">
+              Still have a question? Email us at{" "}
+              <a href={`mailto:${SUPPORT_EMAIL}`} className="font-bold text-[#EE9B79] hover:text-[#CE6A4A]">{SUPPORT_EMAIL}</a>.
+            </p>
+          )}
           {slug === "contact" && (LEGAL_NAME || BUSINESS_ADDRESS || SUPPORT_PHONE || SUPPORT_EMAIL) && (
             <section data-testid="contact-details" className="rounded-2xl border border-white/[0.08] bg-[#1C1B19] p-6">
               <h2 className="text-xl font-extrabold tracking-tight">Business details</h2>

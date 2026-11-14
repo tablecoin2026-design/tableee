@@ -68,6 +68,7 @@ const BOOKING_STATUS_COLOR = {
   declined: "text-[color:var(--st-warn)]",
   seated: "text-[color:var(--st-ok)]",
   no_show: "text-[color:var(--st-warn)]",
+  expired: "text-[color:var(--st-faint)]",
   cancelled: "text-[color:var(--st-faint)]",
 };
 
@@ -259,6 +260,56 @@ function BookingDepositControl({ venueId, amount, onSaved }) {
           className="rounded-xl bg-gradient-to-r from-[#CE6A4A] to-[#B5573A] px-8 py-3.5 text-xs font-semibold tracking-[0.2em] uppercase text-[#0B0A0A] hover:brightness-110 disabled:opacity-50 transition"
         >
           {busy ? "Saving" : "Save"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function AutoConfirmControl({ venueId, enabled, onSaved }) {
+  const [on, setOn] = useState(!!enabled);
+  const [busy, setBusy] = useState(false);
+
+  const flip = async () => {
+    const next = !on;
+    setBusy(true);
+    try {
+      await api.patch(`/staff/venues/${venueId}/auto-confirm`, { enabled: next });
+      setOn(next);
+      toast.success(next ? "Bookings are now confirmed instantly." : "You'll confirm each booking yourself.");
+      onSaved?.();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Could not change this setting.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="rounded-2xl border border-[color:var(--st-border)] bg-[color:var(--st-card)] p-6" data-testid="auto-confirm-control">
+      <div className="flex items-start justify-between gap-6">
+        <div>
+          <div className="text-sm font-semibold tracking-[0.15em] uppercase text-[color:var(--st-text)]">Confirm bookings instantly</div>
+          <p className="mt-2 max-w-2xl text-[15px] text-[color:var(--st-soft)]">
+            {on
+              ? "On. Guests get a confirmed table the moment they book, as long as seats are free. Nothing to approve."
+              : "Off. Each new booking waits for you to press Confirm or Send regrets. Requests nobody answers are closed automatically 90 minutes after the booking time, and any deposit is refunded."}
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={on}
+          aria-label="Confirm bookings instantly"
+          disabled={busy}
+          onClick={flip}
+          data-testid="auto-confirm-switch"
+          className={cn(
+            "relative mt-1 h-8 w-14 shrink-0 rounded-full border transition-colors disabled:opacity-60",
+            on ? "border-[color:var(--st-gold)] bg-[color:var(--st-gold)]" : "border-[color:var(--st-border)] bg-[color:var(--st-dep-field)]",
+          )}
+        >
+          <span className={cn("absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-all", on ? "left-[1.7rem]" : "left-0.5")} />
         </button>
       </div>
     </div>
@@ -2406,6 +2457,12 @@ export default function StaffDashboard() {
             key={selectedVenue.id}
             venueId={selectedId}
             amount={selectedVenue.booking_deposit_amount}
+            onSaved={() => loadVenues()}
+          />
+          <AutoConfirmControl
+            key={`auto-${selectedVenue.id}`}
+            venueId={selectedId}
+            enabled={selectedVenue.auto_confirm}
             onSaved={() => loadVenues()}
           />
           <SlotSeatsControl

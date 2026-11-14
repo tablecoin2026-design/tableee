@@ -17,7 +17,8 @@ const CONCIERGE_TYPE_LABEL = {
 };
 
 const CONCIERGE_STATUS_LABEL = {
-  pending: "Awaiting the room",
+  pending: "Waiting for the restaurant",
+  expired: "Not confirmed in time",
   acknowledged: "The room has replied",
   declined: "Regrets",
   fulfilled: "Fulfilled",
@@ -36,6 +37,7 @@ const BOOKING_STATUS_LABEL = {
 const BOOKING_STATUS_COLOR = {
   awaiting_payment: "text-[#E8A33D]",
   pending: "text-[#B8B2AA]",
+  expired: "text-[#8F8781]",
   confirmed: "text-[#EE9B79]",
   declined: "text-[#E8A33D]",
   seated: "text-[#7DBE8A]",

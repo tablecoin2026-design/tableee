@@ -239,7 +239,10 @@ export function BookingModal({ venue, onClose, onBooked }) {
               </div>
             </div>
             <p className="mt-6 text-sm text-[#B8AA98]">
-              Show this code at the host stand — the room will confirm it shortly. You&apos;ll find it under{" "}
+              {confirmed.status === "confirmed"
+                ? "Your table is confirmed. Show this code at the host stand."
+                : "Your request has gone to the restaurant. They'll confirm it shortly; if they can't, you'll be told and any deposit is refunded."}{" "}
+              You&apos;ll find it under{" "}
               <Link to="/bookings" className="text-[#F0D3AE] underline-offset-4 hover:underline">Your reservations</Link>.
             </p>
             <div className="mt-5">

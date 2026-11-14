@@ -6,11 +6,13 @@ import { api, assetUrl, formatApiError } from "@/lib/api";
 import { AddToCalendar } from "@/components/AddToCalendar";
 import { ReviewForm, Stars } from "@/components/Reviews";
 import { cn } from "@/lib/utils";
+import { SUPPORT_EMAIL, mailto } from "@/lib/site";
 
 const serif = "font-['Cormorant_Garamond']";
 
 const STATUS = {
-  pending: { label: "Awaiting the room", color: "text-[#E8A33D]" },
+  pending: { label: "Waiting for the restaurant", color: "text-[#E8A33D]" },
+  expired: { label: "Not confirmed in time", color: "text-[#8F8781]" },
   confirmed: { label: "Confirmed", color: "text-[#7DBE8A]" },
   awaiting_payment: { label: "Awaiting payment", color: "text-[#E8A33D]" },
   seated: { label: "Dined", color: "text-[#8F8781]" },
@@ -127,10 +129,15 @@ function BookingCard({ b, image, onCancel }) {
           )}
           {b.payment_status === "refunded" && <div className="mt-2 text-xs text-[#7DBE8A]">₹{b.deposit_amount} deposit refunded</div>}
           {b.payment_status === "refund_failed" && (
-            <div className="mt-2 text-xs text-[#E8A33D]">We couldn&apos;t refund your ₹{b.deposit_amount} deposit automatically. Contact us with code {b.code}.</div>
+            <div className="mt-2 text-xs text-[#E8A33D]">We couldn&apos;t refund your ₹{b.deposit_amount} deposit automatically. Email <a href={mailto(`Refund for booking ${b.code}`)} className="underline">{SUPPORT_EMAIL}</a> with code {b.code}.</div>
           )}
           {upcoming && b.payment_status === "paid" && (
             <div className="mt-2 text-xs text-[#8E8982]">Cancel at least 24 hours before to get your deposit back.</div>
+          )}
+          {b.payment_status === "paid_kept" && (
+            <div className="mt-2 text-xs text-[#8F8781]">
+              Deposit kept (cancelled within 24 hours). Questions? <a href={mailto(`Booking ${b.code}`)} className="underline">{SUPPORT_EMAIL}</a>
+            </div>
           )}
           {b.note && <p className="mt-3 text-sm italic text-[#B8B2AA]">&ldquo;{b.note}&rdquo;</p>}
           {b.staff_reply && (
