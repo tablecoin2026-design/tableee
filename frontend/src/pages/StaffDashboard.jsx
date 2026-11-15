@@ -743,7 +743,7 @@ function LiveCheckinQr({ venue }) {
 
   if (!token) {
     return (
-      <div className="grid h-[328px] w-[328px] place-items-center rounded-2xl border border-[color:var(--st-border)] text-sm text-[color:var(--st-muted)]">
+      <div className="grid aspect-square w-full max-w-[328px] place-items-center rounded-2xl border border-[color:var(--st-border)] text-sm text-[color:var(--st-muted)]">
         {failed ? "Could not load the live code. Retrying…" : "Loading live code…"}
       </div>
     );

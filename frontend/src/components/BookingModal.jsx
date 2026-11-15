@@ -184,7 +184,7 @@ export function BookingModal({ venue, onClose, onBooked }) {
       data-testid="booking-modal"
     >
       <div
-        className="relative w-full sm:max-w-xl rounded-t-3xl sm:rounded-3xl bg-[#17110C] border border-white/10 shadow-[0_30px_80px_rgba(0,0,0,0.6)] max-h-[92vh] overflow-y-auto"
+        className="relative w-full sm:max-w-xl rounded-t-3xl sm:rounded-3xl bg-[#17110C] border border-white/10 shadow-[0_30px_80px_rgba(0,0,0,0.6)] modal-max-h overflow-y-auto overscroll-contain safe-pb"
         onClick={(e) => e.stopPropagation()}
       >
         <div

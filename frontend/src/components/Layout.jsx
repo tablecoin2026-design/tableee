@@ -60,7 +60,7 @@ export function Layout({ children }) {
   return (
     <div
       className={cn(
-        "min-h-screen pb-24",
+        "min-h-screen pb-nav",
         isMember && "md:pb-0",
         isStaffContext
           ? "bg-[color:var(--st-page)] text-[color:var(--st-text)]"
@@ -76,7 +76,7 @@ export function Layout({ children }) {
         </div>
       )}
       {isStaffContext && (
-        <header className="sticky top-0 z-40 backdrop-blur-xl bg-[rgb(var(--st-page-rgb)/0.9)] sm:hidden">
+        <header className="sticky top-0 z-40 backdrop-blur-xl bg-[rgb(var(--st-page-rgb)/0.9)] sm:hidden safe-pt">
           <div className="mx-auto max-w-6xl px-5 py-4 flex items-center justify-between">
             <div className="flex items-center gap-4">
               <button
@@ -109,7 +109,7 @@ export function Layout({ children }) {
       {/* Bottom nav for members */}
       {user && !isStaffContext && (
         <nav
-          className="fixed bottom-0 inset-x-0 z-40 border-t border-white/[0.06] backdrop-blur-xl bg-[#0B0A0A]/95 md:hidden"
+          className="fixed bottom-0 inset-x-0 z-40 border-t border-white/[0.06] backdrop-blur-xl bg-[#0B0A0A]/95 md:hidden safe-pb"
           data-testid="bottom-nav"
         >
           <div className="mx-auto max-w-6xl grid grid-cols-5">
@@ -123,7 +123,7 @@ export function Layout({ children }) {
       {/* Staff sub-nav is inside StaffDashboard */}
       {user && isStaffContext && (
         <nav
-          className="fixed bottom-0 inset-x-0 z-40 border-t border-[color:var(--st-border)] backdrop-blur-xl bg-[rgb(var(--st-page-rgb)/0.95)]"
+          className="fixed bottom-0 inset-x-0 z-40 border-t border-[color:var(--st-border)] backdrop-blur-xl bg-[rgb(var(--st-page-rgb)/0.95)] sm:hidden safe-pb"
           data-testid="staff-bottom-nav"
         >
           <div className="mx-auto max-w-6xl grid grid-cols-1">

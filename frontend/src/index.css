@@ -58,7 +58,40 @@ body,
   background: var(--ritual-bg);
   color: var(--ritual-text);
   min-height: 100vh;
+  min-height: 100dvh;
 }
+
+/* ---- Cross-device foundation ---- */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+body { overflow-x: hidden; overscroll-behavior-y: none; }
+img, video, svg, canvas { max-width: 100%; }
+img, video { height: auto; }
+a, button, [role="button"], [role="tab"], label, select, summary { touch-action: manipulation; }
+
+/* iOS Safari zooms into any field under 16px; keep fields at 16px on touch screens. */
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea { font-size: 16px !important; }
+}
+
+/* Mobile browsers: 100vh includes the collapsing URL bar, dvh does not. */
+.min-h-screen { min-height: 100vh; min-height: 100dvh; }
+.h-screen { height: 100vh; height: 100dvh; }
+
+/* Notch / home-indicator safe areas for edge-pinned UI. */
+.safe-pb { padding-bottom: env(safe-area-inset-bottom, 0px); }
+.safe-pt { padding-top: env(safe-area-inset-top, 0px); }
+.pb-nav { padding-bottom: calc(6rem + env(safe-area-inset-bottom, 0px)); }
+.modal-max-h { max-height: 92vh; max-height: calc(100dvh - 1rem); }
+@media (min-width: 640px) { .modal-max-h { max-height: 90vh; max-height: min(90dvh, 100dvh - 3rem); } }
+
+/* Hover-only affordances shouldn't stick on touch devices. */
+@media (hover: none) { .group-hover-fix { transition: none; } }
 
 body {
   margin: 0;

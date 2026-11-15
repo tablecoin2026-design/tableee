@@ -303,7 +303,7 @@ export default function Profile() {
       {/* Identity + stats */}
       <section className={card}>
         <div className="flex items-center gap-5 flex-wrap">
-          <span className="grid h-[104px] w-[104px] shrink-0 place-items-center rounded-full bg-[#4A2A20]">
+          <span className="grid h-20 w-20 sm:h-[104px] sm:w-[104px] shrink-0 place-items-center rounded-full bg-[#4A2A20]">
             <User strokeWidth={1.4} className="h-12 w-12 text-[#CE6A4A]" />
           </span>
           <div className="flex-1 min-w-0">

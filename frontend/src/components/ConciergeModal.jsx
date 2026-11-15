@@ -43,7 +43,7 @@ export function ConciergeModal({ venue, onClose, onSent, mode = "note", initialT
       data-testid="concierge-modal"
     >
       <div
-        className="relative w-full sm:max-w-lg bg-[#1B1917] border border-[#262321] p-8 sm:p-10 max-h-[90vh] overflow-y-auto"
+        className="relative w-full sm:max-w-lg bg-[#1B1917] border border-[#262321] p-6 sm:p-10 modal-max-h overflow-y-auto overscroll-contain safe-pb"
         onClick={(e) => e.stopPropagation()}
       >
         <button
